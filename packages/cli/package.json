@@ -30,14 +30,14 @@
   "author": "Luke Autry <lukeautry@gmail.com> (http://www.lukeautry.com)",
   "license": "MIT",
   "dependencies": {
-    "@namecheap/tsoa-runtime": "^4.1.5",
+    "@namecheap/tsoa-runtime": "^5.0.0",
     "deepmerge": "^4.2.2",
     "fs-extra": "^8.1.0",
     "glob": "^7.1.6",
     "handlebars": "^4.7.7",
     "merge": "^2.1.0",
     "minimatch": "^3.0.4",
-    "typescript": "^4.5.4",
+    "typescript": "~4.8.2",
     "validator": "^13.6.0",
     "yamljs": "^0.3.0",
     "yargs": "^15.4.1"

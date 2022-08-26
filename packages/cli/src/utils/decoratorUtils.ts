@@ -2,8 +2,12 @@ import * as ts from 'typescript';
 import { getInitializerValue } from '../metadataGeneration/initializer-value';
 
 export function getDecorators(node: ts.Node, isMatching: (identifier: ts.Identifier) => boolean) {
-  const decorators = node.decorators;
-  if (!decorators || !decorators.length) {
+  if (!ts.canHaveDecorators(node)) {
+    return [];
+  }
+
+  const decorators = ts.getDecorators(node);
+  if (!decorators) {
     return [];
   }
 
