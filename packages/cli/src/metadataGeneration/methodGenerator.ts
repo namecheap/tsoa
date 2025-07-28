@@ -375,7 +375,7 @@ export class MethodGenerator {
           };
           processor(context);
         } catch (error) {
-          throw new GenerateMetadataError(`Error in custom decorator processor for '${decoratorName}'`);
+          throw new GenerateMetadataError(`Error in custom decorator processor for '${decoratorName}'`, this.node);
         }
       }
     }
