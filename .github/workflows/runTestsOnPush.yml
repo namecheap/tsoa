@@ -1,22 +1,28 @@
-on: [push, pull_request]
+on:
+    push:
+        branches:
+            - master
+        tags-ignore:
+            - '**'
+    pull_request:
+        branches:
+            - '**'
+
 name: Build and Test
 jobs:
   build:
     name: Build
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        node-version: [12, 14, 16, 17]
-        os: [macos-latest, ubuntu-latest, windows-latest]
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@master
 
       - name: Setup Node
-        uses: actions/setup-node@v2
+        uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: 17
           cache: yarn
+          cache-dependency-path: '**/yarn.lock'
 
       - name: Install Yarn
         run: npm install -g yarn
