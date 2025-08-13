@@ -21,6 +21,14 @@ export const getInitializerValue = (initializer?: ts.Expression | ts.ImportSpeci
   }
 
   switch (initializer.kind) {
+    case ts.SyntaxKind.AsExpression:
+      return getInitializerValue((initializer as ts.AsExpression).expression, typeChecker, type);
+    case ts.SyntaxKind.TypeAssertionExpression:
+      return getInitializerValue((initializer as ts.TypeAssertion).expression, typeChecker, type);
+    case ts.SyntaxKind.NonNullExpression:
+      return getInitializerValue((initializer as ts.NonNullExpression).expression, typeChecker, type);
+    case ts.SyntaxKind.ParenthesizedExpression:
+      return getInitializerValue((initializer as ts.ParenthesizedExpression).expression, typeChecker, type);
     case ts.SyntaxKind.BinaryExpression: {
       const be = initializer as ts.BinaryExpression;
       const leftVal = getInitializerValue(be.left as any, typeChecker, type);
