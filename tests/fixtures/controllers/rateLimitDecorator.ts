@@ -38,3 +38,40 @@ export const RateLimitByUserIdProcessor: NodeDecoratorProcessor = (context: Deco
     },
   });
 };
+
+export interface UserIpRateLimitConfig {
+  limit: number;
+  slidingWindowSec: number;
+  description?: string;
+}
+
+export function RateLimitByUserIp(config: UserIpRateLimitConfig): MethodDecorator {
+  return (target: any, propertyKey: string | symbol, descriptor: PropertyDescriptor) => {
+    const metadataKey = Symbol('tsoa:rate-limit-by-user-ip');
+    Reflect.defineMetadata(metadataKey, config, descriptor.value);
+
+    return descriptor;
+  };
+}
+
+export const RateLimitByUserIpProcessor: NodeDecoratorProcessor = (context: DecoratorProcessorContext) => {
+  const { methodObject, decoratorArguments } = context;
+  const arg = (decoratorArguments && decoratorArguments[0]) as UserIpRateLimitConfig | undefined;
+
+  const limit = arg?.limit ?? 20;
+  const slidingWindowSec = arg?.slidingWindowSec ?? 60;
+  const description = arg?.description ?? `${limit} requests per ${slidingWindowSec} seconds per IP`;
+
+  if (!methodObject.extensions) {
+    methodObject.extensions = [];
+  }
+
+  methodObject.extensions.push({
+    key: 'x-rate-limit-by-user-ip',
+    value: {
+      limit,
+      slidingWindowSec,
+      description,
+    },
+  });
+};
