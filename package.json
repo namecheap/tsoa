@@ -37,20 +37,26 @@
     "preversion": "yarn test",
     "test": "lerna run test --stream",
     "lint": "eslint . --ext .ts",
-    "lint:fix": "yarn run lint --fix",
-    "watch": "lerna run watch --parallel",
-    "lerna": "lerna"
+    "lint:fix": "yarn run eslint --ext .ts --fix",
+    "watch": "lerna run watch",
+    "lerna": "lerna",
+    "typedocs": "typedoc --options ./typedoc.json"
   },
   "dependencies": {},
   "devDependencies": {
-    "@typescript-eslint/eslint-plugin": "^5.8.1",
-    "@typescript-eslint/parser": "^5.8.1",
-    "eslint": "^8.5.0",
-    "eslint-config-prettier": "^8.3.0",
+    "@typescript-eslint/eslint-plugin": "6.16.0",
+    "@typescript-eslint/parser": "^6.16.0",
+    "eslint": "^8.56.0",
+    "eslint-config-prettier": "^9.1.0",
     "husky": "^4.3.0",
-    "lerna": "^4.0.0",
-    "lint-staged": "^10.4.0",
-    "prettier": "^2.5.1"
+    "lerna": "^8.1.8",
+    "lint-staged": "^15.2.10",
+    "prettier": "^3.3.3",
+    "ts-node": "^10.9.2",
+    "typedoc": "^0.26.7"
+  },
+  "resolutions": {
+    "typescript": "^5.2.2"
   },
   "repository": {
     "type": "git",
@@ -58,7 +64,7 @@
   },
   "engines": {
     "yarn": ">=1.9.4",
-    "node": ">=12.0.0"
+    "node": ">=18.0.0"
   },
   "engineStrict": true,
   "workspaces": [

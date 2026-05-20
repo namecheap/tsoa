@@ -14,6 +14,12 @@ describe('Metadata generation', () => {
       expect(metadata.controllers[0].name).to.equal('GetTestController');
       expect(metadata.controllers[0].path).to.equal('GetTest');
     });
+
+    it('should fail if there are no controllers', () => {
+      expect(() => {
+        new MetadataGenerator('./fixtures/controllers/noController.ts').Generate();
+      }).to.throw('no controllers found, check tsoa configuration');
+    });
   });
 
   describe('InvalidExtensionControllerGenerator', () => {
@@ -149,7 +155,7 @@ describe('Metadata generation', () => {
         throw new Error('Method tags not defined!');
       }
 
-      expect(method.tags).to.deep.equal(['Tag1', 'Tag2', 'Tag3']);
+      expect(method.tags).to.deep.equal(['Tag1', 'Tag2', 'Tag3', 'MethodTest']);
     });
 
     it('should generate multi response', () => {
@@ -158,22 +164,27 @@ describe('Metadata generation', () => {
         throw new Error('Method multiResponse not defined!');
       }
 
-      expect(method.responses.length).to.equal(4);
+      expect(method.responses.length).to.equal(5);
 
-      const badResponse = method.responses[0];
+      const badResponse = method.responses[1];
       expect(badResponse.name).to.equal('400');
       expect(badResponse.description).to.equal('Bad Request');
+      expect(badResponse.examples).to.deep.equal([
+        { status: 400, message: 'reason 1' },
+        { status: 400, message: 'reason 2' },
+      ]);
 
-      const unauthResponse = method.responses[1];
+      const unauthResponse = method.responses[2];
       expect(unauthResponse.name).to.equal('401');
       expect(unauthResponse.description).to.equal('Unauthorized');
+      expect(unauthResponse.examples).to.be.undefined;
 
-      const defaultResponse = method.responses[2];
+      const defaultResponse = method.responses[3];
       expect(defaultResponse.name).to.equal('default');
       expect(defaultResponse.description).to.equal('Unexpected error');
       expect(defaultResponse.examples).to.deep.equal([{ status: 500, message: 'Something went wrong!' }]);
 
-      const successResponse = method.responses[3];
+      const successResponse = method.responses[4];
       expect(successResponse.name).to.equal('200');
       expect(successResponse.description).to.equal('Ok');
     });
@@ -216,7 +227,7 @@ describe('Metadata generation', () => {
         secondSec: ['permission:admin', 'permission:owner'],
       });
 
-      expect(method.tags).to.deep.equal(['EnumTag1']);
+      expect(method.tags).to.deep.equal(['EnumTag1', 'MethodTest']);
     });
 
     it('should generate success response', () => {
@@ -309,6 +320,7 @@ describe('Metadata generation', () => {
         { key: 'x-attKey6', value: [{ y0: 'yt0', y1: 'yt1', y2: 123, y3: true, y4: null }, { y2: 'yt2' }] },
         { key: 'x-attKey7', value: { test: ['testVal', 123, true, null] } },
         { key: 'x-attKey8', value: { test: { testArray: ['testVal1', true, null, ['testVal2', 'testVal3', 123, true, null]] } } },
+        { key: 'x-attKey9', value: 'identifierAttValue' },
       ];
 
       expect(method.extensions).to.deep.equal(expectedExtensions);
@@ -457,7 +469,39 @@ describe('Metadata generation', () => {
       expect(nicknamesParam.example).to.be.undefined;
     });
 
-    it('should generate an path parameter', () => {
+    it('should generate a queries parameter', () => {
+      const method = controller.methods.find(m => m.name === 'getQueries');
+      if (!method) {
+        throw new Error('Method getQueries not defined!');
+      }
+      const parameter = method.parameters.find(param => param.parameterName === 'queryParams');
+      if (!parameter) {
+        throw new Error('Parameter queryParams not defined!');
+      }
+
+      expect(method.parameters.length).to.equal(1);
+      expect(parameter.description).to.equal('Queries description');
+      expect(parameter.in).to.equal('queries');
+      expect(parameter.name).to.equal('queryParams');
+      expect(parameter.parameterName).to.equal('queryParams');
+      expect(parameter.required).to.be.true;
+      expect(parameter.example).not.to.be.undefined;
+      expect(parameter.example).to.deep.equal([
+        {
+          firstname: 'first1',
+          lastname: 'last1',
+          age: 1,
+        },
+        {
+          firstname: 'first2',
+          lastname: 'last2',
+          age: 2,
+        },
+      ]);
+      expect((parameter.example as unknown[]).length).to.be.equal(2);
+    });
+
+    it('should generate a path parameter', () => {
       const method = controller.methods.find(m => m.name === 'getPath');
       if (!method) {
         throw new Error('Method getPath not defined!');
@@ -517,7 +561,7 @@ describe('Metadata generation', () => {
       expect(genderParam.type.dataType).to.equal('refEnum');
     });
 
-    it('should generate an path parameter from colon delimiter path params', () => {
+    it('should generate a path parameter from colon delimiter path params', () => {
       const method = controller.methods.find(m => m.name === 'getPathColonDelimiter');
       if (!method) {
         throw new Error('Method getPathColonDelimiter not defined!');
@@ -572,6 +616,23 @@ describe('Metadata generation', () => {
       expect(genderParam.description).to.equal('Gender description');
       expect(genderParam.required).to.be.true;
       expect(genderParam.type.dataType).to.equal('refEnum');
+    });
+
+    it('should generate a path parameter from template literal', () => {
+      const method = controller.methods.find(m => m.name === 'getPathTemplateLiteral');
+      if (!method) {
+        throw new Error('Method getPathTemplateLiteral not defined!');
+      }
+
+      expect(method.parameters.length).to.equal(1);
+
+      const idParam = method.parameters[0];
+      expect(idParam.in).to.equal('path');
+      expect(idParam.name).to.equal('id');
+      expect(idParam.parameterName).to.equal('id');
+      expect(idParam.description).to.equal('ID description');
+      expect(idParam.required).to.be.true;
+      expect(idParam.type.dataType).to.equal('string');
     });
 
     it('should generate an header parameter', () => {
@@ -988,7 +1049,7 @@ describe('Metadata generation', () => {
   });
 
   describe('SecurityGenerator', () => {
-    const metadataSecurityGenerator = new MetadataGenerator('./fixtures/controllers/getController.ts', undefined, undefined, undefined, {
+    const metadataSecurityGenerator = new MetadataGenerator('./fixtures/controllers/getController.ts', undefined, undefined, undefined, undefined, undefined, undefined, {
       securityGenerator(): Tsoa.Security[] {
         return [
           {
@@ -1008,6 +1069,44 @@ describe('Metadata generation', () => {
           ]);
         });
       });
+    });
+  });
+
+  describe('AnnotatedTypesControllerGenerator', () => {
+    const metadata = new MetadataGenerator('./fixtures/controllers/annotatedTypesController.ts').Generate();
+    const metadataIntDefault = new MetadataGenerator('./fixtures/controllers/annotatedTypesController.ts', undefined, undefined, undefined, undefined, 'integer').Generate();
+
+    const controller = metadata.controllers.find(controller => controller.name === 'AnnotatedTypesController');
+    const controllerIntDefault = metadataIntDefault.controllers.find(controller => controller.name === 'AnnotatedTypesController');
+
+    if (!controller || !controllerIntDefault) throw new Error('AnnotatedTypesController not defined!');
+
+    const getControllerNumberMethods = (controller: Tsoa.Controller) => {
+      const getDefault = controller.methods.find(method => method.name === 'getDefault');
+      const getDouble = controller.methods.find(method => method.name === 'getDouble');
+      const getInteger = controller.methods.find(method => method.name === 'getInteger');
+      if (!getDefault || !getDouble || !getInteger) throw new Error('Methods not defined!');
+      return { getDefault, getDouble, getInteger };
+    };
+
+    const checkNumberType = (method: Tsoa.Method, numberType: string) => {
+      const numberDataType = (method.responses[0].schema as Tsoa.NestedObjectLiteralType).properties.find(p => p.name === 'number')?.type.dataType;
+
+      expect(numberDataType).to.equal(numberType);
+    };
+
+    it('Double default number type is applied correctly', () => {
+      const { getDefault, getDouble, getInteger } = getControllerNumberMethods(controller);
+      checkNumberType(getDefault, 'double');
+      checkNumberType(getDouble, 'double');
+      checkNumberType(getInteger, 'integer');
+    });
+
+    it('Integer default number type is applied correctly', () => {
+      const { getDefault, getDouble, getInteger } = getControllerNumberMethods(controllerIntDefault);
+      checkNumberType(getDefault, 'integer');
+      checkNumberType(getDouble, 'double');
+      checkNumberType(getInteger, 'integer');
     });
   });
 });

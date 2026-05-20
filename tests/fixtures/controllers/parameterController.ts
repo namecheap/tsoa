@@ -1,4 +1,4 @@
-import { Body, BodyProp, Get, Header, Path, Post, Query, Request, Route, Res, TsoaResponse, Deprecated } from '@namecheap/tsoa-runtime';
+import { Body, BodyProp, Get, Header, Path, Post, Query, Request, Route, Res, TsoaResponse, Deprecated, Queries, RequestProp, FormField } from '@namecheap/tsoa-runtime';
 import { Gender, ParameterTestModel } from '../testModel';
 
 @Route('ParameterTest')
@@ -64,6 +64,35 @@ export class ParameterController {
       lastname,
       nicknames,
       weight,
+    });
+  }
+
+  /**
+   * Queries test paramater
+   *
+   * @param {object} queryParams Queries description
+   *
+   * @example queryParams {
+   *  "firstname": "first1",
+   *  "lastname": "last1",
+   *  "age": 1
+   * }
+   * @example queryParams {
+   *  "firstname": "first2",
+   *  "lastname": "last2",
+   *  "age": 2
+   * }
+   */
+  @Get('Queries')
+  public async getQueries(@Queries() queryParams: ParameterTestModel): Promise<ParameterTestModel> {
+    return Promise.resolve<ParameterTestModel>({
+      age: queryParams.age,
+      firstname: queryParams.firstname,
+      gender: queryParams.gender,
+      human: queryParams.human,
+      lastname: queryParams.lastname,
+      nicknames: queryParams.nicknames,
+      weight: queryParams.weight,
     });
   }
 
@@ -135,6 +164,16 @@ export class ParameterController {
   }
 
   /**
+   * Path test paramater
+   *
+   * @param {string} id ID description
+   */
+  @Get(`PathTemplateLiteral/{id}`)
+  public async getPathTemplateLiteral(@Path() id: string): Promise<void> {
+    return;
+  }
+
+  /**
    * Header test paramater
    *
    * @param {string} firstname Firstname description
@@ -184,6 +223,16 @@ export class ParameterController {
       lastname: request.query.lastname,
       weight: Number(request.query.weight),
     });
+  }
+
+  @Post('RequestProps')
+  public async getRequestProp(@RequestProp('body') body: ParameterTestModel): Promise<ParameterTestModel> {
+    return Promise.resolve<ParameterTestModel>(body);
+  }
+
+  @Post('HapiRequestProps')
+  public async getHapiRequestProp(@RequestProp('payload') payload: ParameterTestModel): Promise<ParameterTestModel> {
+    return Promise.resolve<ParameterTestModel>(payload);
   }
 
   /**
@@ -259,12 +308,27 @@ export class ParameterController {
     });
   }
 
-  @Get('ParamaterQueyAnyType')
+  @Get('ParameterHeaderStringType')
+  public async headerStringType(@Header() header: string): Promise<void> {
+    //
+  }
+
+  @Get('FormDataStringType')
+  public async formData(@FormField() data: string): Promise<void> {
+    //
+  }
+
+  @Get('Path/{test}')
+  public async pathStringType(@Path() test: string): Promise<void> {
+    //
+  }
+
+  @Get('ParamaterQueryAnyType')
   public async queryAnyType(@Query() name: any): Promise<void> {
     //
   }
 
-  @Post('ParamaterQueyArray')
+  @Post('ParamaterQueryArray')
   public async queyArray(@Query() name: string[]): Promise<void> {
     //
   }

@@ -3,6 +3,7 @@ import 'mocha';
 import * as request from 'supertest';
 import { server } from '../fixtures/koaNoAdditional/server';
 import { Gender, GenericRequest, ParameterTestModel, TestModel, ValidateMapStringToAny, ValidateMapStringToNumber, ValidateModel } from '../fixtures/testModel';
+import TestAgent = require('supertest/lib/agent');
 
 const basePath = '/v1';
 
@@ -262,6 +263,7 @@ describe('Koa Server (with noImplicitAdditionalProperties turned on)', () => {
         wordOrNull: null,
         maybeString: null,
         justNull: null,
+        nestedNullable: { property: null },
       };
 
       return verifyPostRequest(
@@ -324,6 +326,7 @@ describe('Koa Server (with noImplicitAdditionalProperties turned on)', () => {
           expect(body.nullableTypes.wordOrNull).to.equal(bodyModel.nullableTypes.wordOrNull);
           expect(body.nullableTypes.maybeString).to.equal(bodyModel.nullableTypes.maybeString);
           expect(body.nullableTypes.justNull).to.equal(bodyModel.nullableTypes.justNull);
+          expect(body.nullableTypes.nestedNullable.property).to.equal(bodyModel.nullableTypes.nestedNullable.property);
         },
         200,
       );
@@ -465,7 +468,7 @@ describe('Koa Server (with noImplicitAdditionalProperties turned on)', () => {
     return verifyRequest(verifyResponse, request => request.post(path).send(data), expectedStatus);
   }
 
-  function verifyRequest(verifyResponse: (err: any, res: request.Response) => any, methodOperation: (request: request.SuperTest<any>) => request.Test, expectedStatus = 200) {
+  function verifyRequest(verifyResponse: (err: any, res: request.Response) => any, methodOperation: (request: TestAgent<request.Test>) => request.Test, expectedStatus = 200) {
     return new Promise<void>((resolve, reject) => {
       methodOperation(request(server))
         .expect(expectedStatus)
@@ -475,10 +478,11 @@ describe('Koa Server (with noImplicitAdditionalProperties turned on)', () => {
           try {
             parsedError = JSON.parse(res.error);
           } catch (err) {
-            parsedError = res.error;
+            parsedError = res?.error;
           }
 
           if (err) {
+            verifyResponse(err, res);
             reject({
               error: err,
               response: parsedError,

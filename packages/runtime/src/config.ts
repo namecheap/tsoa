@@ -47,8 +47,19 @@ export interface Config {
    * @example {
    *   "dest": "/tmp"
    * } Allow multer to write to file instead of using Memory's buffer
+   * @deprecated
+   *  since v6.4.0 instroduces RegisterRoutes can pass multerOptions,
+   *  we will quickly remove this options soon at future version.
+   *  (https://github.com/lukeautry/tsoa/issues/1587#issuecomment-2391291433)
+   *  (https://github.com/lukeautry/tsoa/pull/1638)
    */
   multerOpts?: MulterOpts;
+
+  /*
+   * OpenAPI number type to be used for TypeScript's 'number', when there isn't a type annotation
+   * @default double
+   */
+  defaultNumberType?: 'double' | 'float' | 'integer' | 'long';
 }
 
 /**
@@ -66,6 +77,13 @@ export interface SpecConfig {
    * API host, expressTemplate.g. localhost:3000 or myapi.com
    */
   host?: string;
+
+  /**
+   * API servers, expressTemplate.g. [production.api.com, staging.api.com]
+   *
+   * Only available with the specVersion 3
+   */
+  servers?: string[];
 
   /**
    * Base-name of swagger.json or swagger.yaml.
@@ -149,7 +167,7 @@ export interface SpecConfig {
    * Possible values:
    *  - 'immediate' is overriding top level elements only thus you can not append a new path or alter an existing value without erasing same level elements.
    *  - 'recursive' proceed to a deep merge and will concat every branches or override or create new values if needed. @see https://www.npmjs.com/package/merge
-   *  - 'deepmerge' uses `deepmerge` to merge, which will concat object branches and concat arrays as well @see https://www.npmjs.com/package/deepmerge
+   *  - 'deepmerge' uses `ts-deepmerge` to merge, which will concat object branches and concat arrays as well @see https://www.npmjs.com/package/deepmerge @see https://github.com/voodoocreation/ts-deepmerge
    * The default is set to immediate so it is not breaking previous versions.
    * @default 'immediate'
    */
@@ -173,7 +191,7 @@ export interface SpecConfig {
    * and only serves to provide the relevant details for each scheme.
    */
   securityDefinitions?: {
-    [name: string]: Swagger.Security;
+    [name: string]: Swagger.SecuritySchemes;
   };
 
   /**
@@ -196,6 +214,12 @@ export interface SpecConfig {
    * This helps to generate more consistent clients
    */
   useTitleTagsForInlineObjects?: boolean;
+
+  /**
+   * Applies a default security to the entire API.
+   * Can be overridden with @Security or @NoSecurity decorators on controllers or methods
+   */
+  rootSecurity?: Swagger.Security[];
 }
 
 export interface RoutesConfig {
@@ -245,4 +269,17 @@ export interface RoutesConfig {
    * @default false
    */
   esm?: boolean;
+
+  /*
+   * Whether to implicitly coerce body parameters into an accepted type.
+   *
+   * @default true
+   */
+  bodyCoercion?: boolean;
+
+  /**
+   * When enabled, the imports in the routes files will keep having a `.ts` extention to support the TypeScript 5.7 feature rewriteRelativeImportExtensions.
+   * @default false
+   */
+  rewriteRelativeImportExtensions?: boolean;
 }

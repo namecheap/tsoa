@@ -1,11 +1,8 @@
 /* tslint:disable */
 /* eslint-disable */
 // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-{{#if canImportByAlias}}
-  import { Controller, ValidationService, FieldErrors, ValidateError, TsoaRoute, HttpStatusCodeLiteral, TsoaResponse, fetchMiddlewares } from '@namecheap/tsoa-runtime';
-{{else}}
-  import { Controller, ValidationService, FieldErrors, ValidateError, TsoaRoute, TsoaResponse, HttpStatusCodeLiteral } from '../../../src';
-{{/if}}
+import type { TsoaRoute } from '@namecheap/tsoa-runtime';
+import { fetchMiddlewares, KoaTemplateService } from '@namecheap/tsoa-runtime';
 {{#each controllers}}
 // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
 import { {{name}} } from '{{modulePath}}';
@@ -13,22 +10,24 @@ import { {{name}} } from '{{modulePath}}';
 {{#if authenticationModule}}
 import { koaAuthentication } from '{{authenticationModule}}';
 // @ts-ignore - no great way to install types from subpackage
-{{#if esm}}
-import promiseAny from 'promise.any';
-{{else}}
-const promiseAny = require('promise.any');
-{{/if}}
 {{/if}}
 {{#if iocModule}}
 import { iocContainer } from '{{iocModule}}';
-import { IocContainer, IocContainerFactory } from '@namecheap/tsoa-runtime';
+import type { IocContainer, IocContainerFactory } from '@namecheap/tsoa-runtime';
 {{/if}}
-import type { Middleware } from 'koa';
-import * as KoaRouter from '@koa/router';
+import type { Context, Next, Middleware, Request as KRequest, Response as KResponse } from 'koa';
+import type * as KoaRouter from '@koa/router';
 {{#if useFileUploads}}
+{{#if esm}}
+import multer from '@koa/multer';
+{{else}}
 const multer = require('@koa/multer');
-const upload = multer({{{json multerOpts}}});
 {{/if}}
+{{/if}}
+{{#if authenticationModule}}
+const koaAuthenticationRecasted = koaAuthentication as (req: KRequest, securityName: string, scopes?: string[], res?: KResponse) => Promise<any>;
+{{/if}}
+
 
 // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
 
@@ -56,44 +55,62 @@ const models: TsoaRoute.Models = {
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     {{/each}}
 };
-const validationService = new ValidationService(models);
+const templateService = new KoaTemplateService(models, {{{ json minimalSwaggerConfig }}});
 
 // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
 
+
+{{#if useFileUploads}}
+export function RegisterRoutes(router: KoaRouter,opts?:{multer?:ReturnType<typeof multer>}) {
+{{else}}
 export function RegisterRoutes(router: KoaRouter) {
+{{/if}}
+
     // ###########################################################################################################
     //  NOTE: If you do not see routes for all of your controllers in this file, then you might not have informed tsoa of where to look
     //      Please look into the "controllerPathGlobs" config option described in the readme: https://github.com/lukeautry/tsoa
     // ###########################################################################################################
+
+    {{#if useFileUploads}}
+    const upload = opts?.multer ||  multer({{{json multerOpts}}});
+    {{/if}}
+
     {{#each controllers}}
     {{#each actions}}
+        const args{{../name}}_{{name}}: Record<string, TsoaRoute.ParameterSchema> = {
+            {{#each parameters}}
+                {{@key}}: {{{json this}}},
+            {{/each}}
+        };
         router.{{method}}('{{fullPath}}',
             {{#if security.length}}
             authenticateMiddleware({{json security}}),
             {{/if}}
             {{#if uploadFile}}
-            upload.single('{{uploadFileName}}'),
-            {{/if}}
-            {{#if uploadFiles}}
-            upload.array('{{uploadFilesName}}'),
+            upload.fields([
+                {{#each uploadFileName}}
+                {
+                    name: {{json name}},
+                    {{#if maxCount}}
+                    maxCount: {{maxCount}}
+                    {{/if}}
+                }{{#if @last}}{{else}},{{/if}}
+                {{/each}}
+            ]),
             {{/if}}
             ...(fetchMiddlewares<Middleware>({{../name}})),
             ...(fetchMiddlewares<Middleware>({{../name}}.prototype.{{name}})),
 
-            async function {{../name}}_{{name}}(context: any, next: any) {
-            const args = {
-                {{#each parameters}}
-                    {{@key}}: {{{json this}}},
-                {{/each}}
-            };
+            async function {{../name}}_{{name}}(context: Context, next: Next) {
 
             let validatedArgs: any[] = [];
             try {
-              validatedArgs = getValidatedArgs(args, context, next);
+              validatedArgs = templateService.getValidatedArgs({ args: args{{../name}}_{{name}}, context, next });
             } catch (err) {
               const error = err as any;
+              error.message ||= JSON.stringify({ fields: error.fields });
               context.status = error.status;
-              context.throw(error.status, JSON.stringify({ fields: error.fields }));
+              context.throw(context.status, error.message, error);
             }
 
             {{#if ../../iocModule}}
@@ -107,8 +124,13 @@ export function RegisterRoutes(router: KoaRouter) {
             const controller = new {{../name}}();
             {{/if}}
 
-            const promise = controller.{{name}}.apply(controller, validatedArgs as any);
-            return promiseHandler(controller, promise, context, {{successStatus}}, undefined);
+            return templateService.apiHandler({
+              methodName: '{{name}}',
+              controller,
+              context,
+              validatedArgs,
+              successStatus: {{successStatus}},
+            });
         });
         // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     {{/each}}
@@ -139,7 +161,7 @@ export function RegisterRoutes(router: KoaRouter) {
 
                     for (const name in secMethod) {
                         secMethodAndPromises.push(
-                            koaAuthentication(context.request, name, secMethod[name])
+                            koaAuthenticationRecasted(context.request, name, secMethod[name], context.response)
                                 .catch(pushAndRethrow)
                         );
                     }
@@ -149,7 +171,7 @@ export function RegisterRoutes(router: KoaRouter) {
                 } else {
                     for (const name in secMethod) {
                         secMethodOrPromises.push(
-                            koaAuthentication(context.request, name, secMethod[name])
+                            koaAuthenticationRecasted(context.request, name, secMethod[name], context.response)
                                 .catch(pushAndRethrow)
                         );
                     }
@@ -160,15 +182,25 @@ export function RegisterRoutes(router: KoaRouter) {
 
             let success;
             try {
-                const user = await promiseAny(secMethodOrPromises);
+                const user = await Promise.any(secMethodOrPromises);
                 success = true;
                 context.request['user'] = user;
             }
             catch(err) {
+                // Response was sent in middleware, abort
+                if(context.response.body) {
+                    return;
+                }
+
                 // Show most recent error as response
                 const error = failedAttempts.pop();
                 context.status = error.status || 401;
                 context.throw(context.status, error.message, error);
+            }
+
+            // Response was sent in middleware, abort
+            if(context.response.body) {
+                return;
             }
 
             if (success) {
@@ -179,100 +211,6 @@ export function RegisterRoutes(router: KoaRouter) {
         }
     }
     {{/if}}
-
-  // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-
-  function isController(object: any): object is Controller {
-      return 'getHeaders' in object && 'getStatus' in object && 'setStatus' in object;
-  }
-
-  // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-
-  function promiseHandler(controllerObj: any, promise: Promise<any>, context: any, successStatus: any, next?: () => Promise<any>) {
-      return Promise.resolve(promise)
-        .then((data: any) => {
-            let statusCode = successStatus;
-            let headers;
-
-            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-
-            if (isController(controllerObj)) {
-                headers = controllerObj.getHeaders();
-                statusCode = controllerObj.getStatus() || statusCode;
-            }
-            return returnHandler(context, next, statusCode, data, headers);
-        })
-        .catch((error: any) => {
-            context.status = error.status || 500;
-            context.throw(context.status, error.message, error);
-        });
-    }
-
-    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-
-    function returnHandler(context: any, next?: () => any, statusCode?: number, data?: any, headers: any={}) {
-        if (!context.headerSent && !context.response.__tsoaResponded) {
-            if (data !== null && data !== undefined) {
-                context.body = data;
-                context.status = 200;
-            } else {
-                context.status = 204;
-            }
-
-            if (statusCode) {
-                context.status = statusCode;
-            }
-
-            context.set(headers);
-            context.response.__tsoaResponded = true;
-            return next ? next() : context;
-        }
-    }
-
-    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-
-    function getValidatedArgs(args: any, context: any, next: () => any): any[] {
-        const errorFields: FieldErrors = {};
-        const values = Object.keys(args).map(key => {
-            const name = args[key].name;
-            switch (args[key].in) {
-            case 'request':
-                return context.request;
-            case 'query':
-                return validationService.ValidateParam(args[key], context.request.query[name], name, errorFields, undefined, {{{json minimalSwaggerConfig}}});
-            case 'path':
-                return validationService.ValidateParam(args[key], context.params[name], name, errorFields, undefined, {{{json minimalSwaggerConfig}}});
-            case 'header':
-                return validationService.ValidateParam(args[key], context.request.headers[name], name, errorFields, undefined, {{{json minimalSwaggerConfig}}});
-            case 'body':
-                return validationService.ValidateParam(args[key], context.request.body, name, errorFields, undefined, {{{json minimalSwaggerConfig}}});
-            case 'body-prop':
-                return validationService.ValidateParam(args[key], context.request.body[name], name, errorFields, 'body.', {{{json minimalSwaggerConfig}}});
-            case 'formData':
-                if (args[key].dataType === 'file') {
-                  return validationService.ValidateParam(args[key], context.request.file, name, errorFields, undefined, {{{json minimalSwaggerConfig}}});
-                } else if (args[key].dataType === 'array' && args[key].array.dataType === 'file') {
-                  return validationService.ValidateParam(args[key], context.request.files, name, errorFields, undefined, {{{json minimalSwaggerConfig}}});
-                } else {
-                  return validationService.ValidateParam(args[key], context.request.body[name], name, errorFields, undefined, {{{json minimalSwaggerConfig}}});
-                }
-            case 'res':
-                return responder(context, next);
-            }
-        });
-        if (Object.keys(errorFields).length > 0) {
-            throw new ValidateError(errorFields, '');
-        }
-        return values;
-    }
-
-    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-
-    function responder(context: any, next: () => any): TsoaResponse<HttpStatusCodeLiteral, unknown>  {
-        return function(status, data, headers) {
-           returnHandler(context, next, status, data, headers);
-        };
-    };
 
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
 }

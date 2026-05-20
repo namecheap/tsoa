@@ -1,4 +1,3 @@
-import * as ts from 'typescript';
 import { getDecorators, getDecoratorValues, getProduces, getSecurites } from './../utils/decoratorUtils';
 import { GenerateMetadataError } from './exceptions';
 import { MetadataGenerator } from './metadataGenerator';
@@ -6,6 +5,7 @@ import { MethodGenerator } from './methodGenerator';
 import { TypeResolver } from './typeResolver';
 import { Tsoa } from '@namecheap/tsoa-runtime';
 import { getHeaderType } from '../utils/headerTypeHelpers';
+import { isMethodDeclaration, type ClassDeclaration, type CallExpression, type StringLiteral } from 'typescript';
 
 export class ControllerGenerator {
   private readonly path?: string;
@@ -15,7 +15,7 @@ export class ControllerGenerator {
   private readonly commonResponses: Tsoa.Response[];
   private readonly produces?: string[];
 
-  constructor(private readonly node: ts.ClassDeclaration, private readonly current: MetadataGenerator) {
+  constructor(private readonly node: ClassDeclaration, private readonly current: MetadataGenerator, private readonly parentSecurity: Tsoa.Security[] = []) {
     this.path = this.getPath();
     this.tags = this.getTags();
     this.security = this.getSecurity();
@@ -49,7 +49,7 @@ export class ControllerGenerator {
 
   private buildMethods() {
     return this.node.members
-      .filter(ts.isMethodDeclaration)
+      .filter(isMethodDeclaration)
       .map(m => new MethodGenerator(m, this.current, this.commonResponses, this.path, this.tags, this.security, this.isHidden))
       .filter(generator => generator.IsValid())
       .map(generator => generator.Generate());
@@ -65,8 +65,8 @@ export class ControllerGenerator {
     }
 
     const decorator = decorators[0];
-    const expression = decorator.parent as ts.CallExpression;
-    const decoratorArgument = expression.arguments[0] as ts.StringLiteral;
+    const expression = decorator.parent as CallExpression;
+    const decoratorArgument = expression.arguments[0] as StringLiteral;
     return decoratorArgument ? `${decoratorArgument.text}` : '';
   }
 
@@ -77,7 +77,7 @@ export class ControllerGenerator {
     }
 
     return decorators.map(decorator => {
-      const expression = decorator.parent as ts.CallExpression;
+      const expression = decorator.parent as CallExpression;
 
       const [name, description, example] = getDecoratorValues(decorator, this.current.typeChecker);
       if (!name) {
@@ -88,7 +88,7 @@ export class ControllerGenerator {
         description: description || '',
         examples: example === undefined ? undefined : [example],
         name,
-        schema: expression.typeArguments && expression.typeArguments.length > 0 ? new TypeResolver(expression.typeArguments[0], this.current).resolve() : undefined,
+        schema: expression.typeArguments && expression.typeArguments.length > 0 && !this.isHidden ? new TypeResolver(expression.typeArguments[0], this.current).resolve() : undefined,
         headers: getHeaderType(expression.typeArguments, 1, this.current),
       } as Tsoa.Response;
     });
@@ -104,7 +104,7 @@ export class ControllerGenerator {
     }
 
     const decorator = decorators[0];
-    const expression = decorator.parent as ts.CallExpression;
+    const expression = decorator.parent as CallExpression;
 
     return expression.arguments.map((a: any) => a.text as string);
   }
@@ -117,12 +117,16 @@ export class ControllerGenerator {
     const noSecurityDecorators = getDecorators(this.node, identifier => identifier.text === 'NoSecurity');
     const securityDecorators = getDecorators(this.node, identifier => identifier.text === 'Security');
 
+    if (noSecurityDecorators?.length && securityDecorators?.length) {
+      throw new GenerateMetadataError(`NoSecurity decorator cannot be used in conjunction with Security decorator in '${this.node.name!.text}' class.`);
+    }
+
     if (noSecurityDecorators?.length) {
-      throw new GenerateMetadataError(`NoSecurity decorator is unnecessary in '${this.node.name!.text}' class.`);
+      return [];
     }
 
     if (!securityDecorators || !securityDecorators.length) {
-      return [];
+      return this.parentSecurity;
     }
 
     return securityDecorators.map(d => getSecurites(d, this.current.typeChecker));

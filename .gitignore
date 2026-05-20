@@ -3,9 +3,9 @@ distForNoAdditional
 node_modules
 routes.ts
 customRoutes.ts
+**/custom-route-generator/routes/*
 .idea/
 *.swp
 yarn-error.log
 tsconfig.tsbuildinfo
-.history/
-.vscode/
+.typedoc

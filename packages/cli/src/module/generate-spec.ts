@@ -1,8 +1,8 @@
 import * as ts from 'typescript';
-import * as YAML from 'yamljs';
+import * as YAML from 'yaml';
 import { ExtendedSpecConfig } from '../cli';
 import { MetadataGenerator } from '../metadataGeneration/metadataGenerator';
-import { Tsoa, Swagger } from '@namecheap/tsoa-runtime';
+import { Tsoa, Swagger, Config } from '@namecheap/tsoa-runtime';
 import { SpecGenerator2 } from '../swagger/specGenerator2';
 import { SpecGenerator3 } from '../swagger/specGenerator3';
 import { fsMkDir, fsWriteFile } from '../utils/fs';
@@ -22,9 +22,10 @@ export const generateSpec = async (
    * pass in cached metadata returned in a previous step to speed things up
    */
   metadata?: Tsoa.Metadata,
+  defaultNumberType?: Config['defaultNumberType'],
 ) => {
   if (!metadata) {
-    metadata = new MetadataGenerator(swaggerConfig.entryFile, compilerOptions, ignorePaths, swaggerConfig.controllerPathGlobs).Generate();
+    metadata = new MetadataGenerator(swaggerConfig.entryFile, compilerOptions, ignorePaths, swaggerConfig.controllerPathGlobs, swaggerConfig.rootSecurity, defaultNumberType).Generate();
   }
 
   let spec: Swagger.Spec;
@@ -38,7 +39,7 @@ export const generateSpec = async (
 
   let data = JSON.stringify(spec, null, '\t');
   if (swaggerConfig.yaml) {
-    data = YAML.stringify(JSON.parse(data), 10);
+    data = YAML.stringify(JSON.parse(data));
   }
 
   const outputPath = getSwaggerOutputPath(swaggerConfig);

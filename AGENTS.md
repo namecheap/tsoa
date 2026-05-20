@@ -67,21 +67,7 @@ When provided, both `ControllerGenerator.getSecurity()` and `MethodGenerator.get
 
 ---
 
-### 2. `import X as Y` Alias Fix in TypeResolver
-
-**File:** `packages/cli/src/metadataGeneration/typeResolver.ts`
-
-Two fixes:
-
-**a)** `getModelTypeDeclaration`: when the resolved symbol's `escapedName` differs from the local name (i.e. the type was imported with an alias like `import { TestModel as ResponseModel }`), uses `symbol.escapedName` as the canonical type name to look up declarations correctly.
-
-**b)** Heritage clause property merging: `referenceType.properties.forEach` → `(referenceType.properties || []).forEach` — null safety for the case where `properties` is undefined. Wrapped in a try/catch.
-
-> **Note:** A `console.log('HERITAGE =', heritageClauses)` debug line was left in at line ~256 and is still present.
-
----
-
-### 3. Custom Decorator Extension System (NodeDecoratorProcessor)
+### 2. Custom Decorator Extension System (NodeDecoratorProcessor)
 
 **Files:** `packages/cli/src/metadataGeneration/methodGenerator.ts`, `packages/cli/src/metadataGeneration/types/nodeDecoratorProcessor.ts`
 
@@ -96,7 +82,7 @@ The processor mutates `methodObject` in-place (e.g. pushing to `extensions` for 
 
 ---
 
-### 4. Decorator Argument Resolution in `initializer-value.ts`
+### 3. Decorator Argument Resolution in `initializer-value.ts`
 
 **File:** `packages/cli/src/metadataGeneration/initializer-value.ts`
 

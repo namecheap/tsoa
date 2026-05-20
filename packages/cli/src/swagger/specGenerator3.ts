@@ -1,10 +1,14 @@
+import { Swagger, Tsoa, assertNever } from '@namecheap/tsoa-runtime';
+import { merge as mergeAnything } from 'merge-anything';
+import { merge as deepMerge } from 'ts-deepmerge';
+
 import { ExtendedSpecConfig } from '../cli';
-import { Tsoa, assertNever, Swagger } from '@namecheap/tsoa-runtime';
 import { isVoidType } from '../utils/isVoidType';
+import { UnspecifiedObject } from '../utils/unspecifiedObject';
+import { shouldIncludeValidatorInSchema } from '../utils/validatorUtils';
 import { convertColonPathParams, normalisePath } from './../utils/pathUtils';
 import { DEFAULT_REQUEST_MEDIA_TYPE, DEFAULT_RESPONSE_MEDIA_TYPE, getValue } from './../utils/swaggerUtils';
 import { SpecGenerator } from './specGenerator';
-import { UnspecifiedObject } from '../utils/unspecifiedObject';
 
 /**
  * TODO:
@@ -16,15 +20,18 @@ import { UnspecifiedObject } from '../utils/unspecifiedObject';
  * Also accept OpenAPI 3.0.0 metadata, like components/securitySchemes instead of securityDefinitions
  */
 export class SpecGenerator3 extends SpecGenerator {
-  constructor(protected readonly metadata: Tsoa.Metadata, protected readonly config: ExtendedSpecConfig) {
+  constructor(
+    protected readonly metadata: Tsoa.Metadata,
+    protected readonly config: ExtendedSpecConfig,
+  ) {
     super(metadata, config);
   }
 
   public GetSpec() {
     let spec: Swagger.Spec3 = {
+      openapi: '3.0.0',
       components: this.buildComponents(),
       info: this.buildInfo(),
-      openapi: '3.0.0',
       paths: this.buildPaths(),
       servers: this.buildServers(),
       tags: this.config.tags,
@@ -32,13 +39,13 @@ export class SpecGenerator3 extends SpecGenerator {
 
     if (this.config.spec) {
       this.config.specMerging = this.config.specMerging || 'immediate';
-      const mergeFuncs: { [key: string]: any } = {
+      const mergeFuncs: { [key: string]: (spec: UnspecifiedObject, merge: UnspecifiedObject) => UnspecifiedObject } = {
         immediate: Object.assign,
-        recursive: require('merge').recursive,
-        deepmerge: (spec: UnspecifiedObject, merge: UnspecifiedObject): UnspecifiedObject => require('deepmerge').all([spec, merge]),
+        recursive: mergeAnything,
+        deepmerge: (spec: UnspecifiedObject, merge: UnspecifiedObject): UnspecifiedObject => deepMerge(spec, merge),
       };
 
-      spec = mergeFuncs[this.config.specMerging](spec, this.config.spec);
+      spec = mergeFuncs[this.config.specMerging](spec as unknown as UnspecifiedObject, this.config.spec as UnspecifiedObject) as unknown as Swagger.Spec3;
     }
 
     return spec;
@@ -60,7 +67,6 @@ export class SpecGenerator3 extends SpecGenerator {
     if (this.config.license) {
       info.license = { name: this.config.license };
     }
-
     if (this.config.contact) {
       info.contact = this.config.contact;
     }
@@ -86,8 +92,8 @@ export class SpecGenerator3 extends SpecGenerator {
     return components;
   }
 
-  private translateSecurityDefinitions(definitions: { [name: string]: Swagger.Security }) {
-    const defs: { [name: string]: Swagger.Security } = {};
+  private translateSecurityDefinitions(definitions: { [name: string]: Swagger.SecuritySchemes }) {
+    const defs: { [name: string]: Swagger.SecuritySchemes } = {};
     Object.keys(definitions).forEach(key => {
       if (definitions[key].type === 'basic') {
         defs[key] = {
@@ -95,6 +101,7 @@ export class SpecGenerator3 extends SpecGenerator {
           type: 'http',
         } as Swagger.BasicSecurity3;
       } else if (definitions[key].type === 'oauth2') {
+        /* eslint-disable @typescript-eslint/no-unnecessary-type-assertion */
         const definition = definitions[key] as
           | Swagger.OAuth2PasswordSecurity
           | Swagger.OAuth2ApplicationSecurity
@@ -136,12 +143,9 @@ export class SpecGenerator3 extends SpecGenerator {
   private buildServers() {
     const basePath = normalisePath(this.config.basePath as string, '/', undefined, false);
     const scheme = this.config.schemes ? this.config.schemes[0] : 'https';
-    const url = this.config.host ? `${scheme}://${this.config.host}${basePath}` : basePath;
-    return [
-      {
-        url,
-      } as Swagger.Server,
-    ];
+    const hosts = this.config.servers ? this.config.servers : this.config.host ? [this.config.host!] : undefined;
+    const convertHost = (host: string) => ({ url: `${scheme}://${host}${basePath}` });
+    return (hosts?.map(convertHost) || [{ url: basePath }]) as Swagger.Server[];
   }
 
   private buildSchema() {
@@ -150,7 +154,7 @@ export class SpecGenerator3 extends SpecGenerator {
       const referenceType = this.metadata.referenceTypeMap[typeName];
 
       if (referenceType.dataType === 'refObject') {
-        const required = referenceType.properties.filter(p => p.required && !this.hasUndefined(p)).map(p => p.name);
+        const required = referenceType.properties.filter(p => this.isRequiredWithoutDefault(p) && !this.hasUndefined(p)).map(p => p.name);
         schema[referenceType.refName] = {
           description: referenceType.description,
           properties: this.buildProperties(referenceType.properties),
@@ -196,17 +200,18 @@ export class SpecGenerator3 extends SpecGenerator {
             ],
           };
         }
+        if (referenceType.example) {
+          schema[referenceType.refName].example = referenceType.example;
+        }
       } else if (referenceType.dataType === 'refAlias') {
         const swaggerType = this.getSwaggerType(referenceType.type);
         const format = referenceType.format as Swagger.DataFormat;
         const validators = Object.keys(referenceType.validators)
-          .filter(key => {
-            return !key.startsWith('is') && key !== 'minDate' && key !== 'maxDate';
-          })
+          .filter(shouldIncludeValidatorInSchema)
           .reduce((acc, key) => {
             return {
               ...acc,
-              [key]: referenceType.validators[key].value,
+              [key]: referenceType.validators[key]!.value,
             };
           }, {});
 
@@ -263,18 +268,27 @@ export class SpecGenerator3 extends SpecGenerator {
     }
 
     if (method.security) {
-      pathMethod.security = method.security as any[];
+      pathMethod.security = method.security;
     }
 
     const bodyParams: Tsoa.Parameter[] = method.parameters.filter(p => p.in === 'body');
     const bodyPropParams: Tsoa.Parameter[] = method.parameters.filter(p => p.in === 'body-prop');
     const formParams: Tsoa.Parameter[] = method.parameters.filter(p => p.in === 'formData');
+    const queriesParams: Tsoa.Parameter[] = method.parameters.filter(p => p.in === 'queries');
 
     pathMethod.parameters = method.parameters
       .filter(p => {
-        return ['body', 'formData', 'request', 'body-prop', 'res'].indexOf(p.in) === -1;
+        return ['body', 'formData', 'request', 'body-prop', 'res', 'queries', 'request-prop'].indexOf(p.in) === -1;
       })
       .map(p => this.buildParameter(p));
+
+    if (queriesParams.length > 1) {
+      throw new Error('Only one queries parameter allowed per controller method.');
+    }
+
+    if (queriesParams.length === 1) {
+      pathMethod.parameters.push(...this.buildQueriesParameter(queriesParams[0]));
+    }
 
     if (bodyParams.length > 1) {
       throw new Error('Only one body parameter allowed per controller method.');
@@ -284,7 +298,7 @@ export class SpecGenerator3 extends SpecGenerator {
       throw new Error('Either body parameter or form parameters allowed per controller method - not both.');
     }
 
-    if (bodyPropParams.length > 1) {
+    if (bodyPropParams.length > 0) {
       if (!bodyParams.length) {
         bodyParams.push({
           in: 'body',
@@ -361,7 +375,7 @@ export class SpecGenerator3 extends SpecGenerator {
             headers[each.name] = {
               schema: this.getSwaggerType(each.type) as Swagger.Schema3,
               description: each.description,
-              required: each.required,
+              required: this.isRequiredWithoutDefault(each),
             };
           });
         } else {
@@ -385,8 +399,11 @@ export class SpecGenerator3 extends SpecGenerator {
     for (const parameter of parameters) {
       const mediaType = this.buildMediaType(controllerName, method, parameter);
       properties[parameter.name] = mediaType.schema!;
-      if (parameter.required) {
+      if (this.isRequiredWithoutDefault(parameter)) {
         required.push(parameter.name);
+      }
+      if (parameter.deprecated) {
+        properties[parameter.name].deprecated = parameter.deprecated;
       }
     }
     const requestBody: Swagger.RequestBody = {
@@ -412,7 +429,7 @@ export class SpecGenerator3 extends SpecGenerator {
 
     const requestBody: Swagger.RequestBody = {
       description: parameter.description,
-      required: parameter.required,
+      required: this.isRequiredWithoutDefault(parameter),
       content: {
         [consumes]: mediaType,
       },
@@ -423,19 +440,17 @@ export class SpecGenerator3 extends SpecGenerator {
 
   private buildMediaType(controllerName: string, method: Tsoa.Method, parameter: Tsoa.Parameter): Swagger.MediaType {
     const validators = Object.keys(parameter.validators)
-      .filter(key => {
-        return !key.startsWith('is') && key !== 'minDate' && key !== 'maxDate';
-      })
+      .filter(shouldIncludeValidatorInSchema)
       .reduce((acc, key) => {
         return {
           ...acc,
-          [key]: validators[key].value,
+          [key]: parameter.validators[key]!.value,
         };
       }, {});
 
     const mediaType: Swagger.MediaType = {
       schema: {
-        ...this.getSwaggerType(parameter.type, this.config.useTitleTagsForInlineObjects ? this.getOperationId(controllerName, method) + 'RequestBody' : undefined),
+        ...(this.getSwaggerType(parameter.type, this.config.useTitleTagsForInlineObjects ? this.getOperationId(controllerName, method) + 'RequestBody' : undefined) as Swagger.Schema3),
         ...validators,
         ...(parameter.description && { description: parameter.description }),
       },
@@ -458,12 +473,21 @@ export class SpecGenerator3 extends SpecGenerator {
     return mediaType;
   }
 
+  private buildQueriesParameter(source: Tsoa.Parameter): Swagger.Parameter3[] {
+    if (source.type.dataType === 'refObject' || source.type.dataType === 'nestedObjectLiteral') {
+      const properties = source.type.properties;
+
+      return properties.map(property => this.buildParameter(this.queriesPropertyToQueryParameter(property)));
+    }
+    throw new Error(`Queries '${source.name}' parameter must be an object.`);
+  }
+
   private buildParameter(source: Tsoa.Parameter): Swagger.Parameter3 {
     const parameter = {
       description: source.description,
       in: source.in,
       name: source.name,
-      required: source.required,
+      required: this.isRequiredWithoutDefault(source),
       schema: {
         default: source.default,
         format: undefined,
@@ -483,13 +507,11 @@ export class SpecGenerator3 extends SpecGenerator {
       return parameter;
     }
 
-    const validatorObjs = {};
+    const validatorObjs: { [key in Tsoa.SchemaValidatorKey]?: unknown } = {};
     Object.keys(source.validators)
-      .filter(key => {
-        return !key.startsWith('is') && key !== 'minDate' && key !== 'maxDate';
-      })
-      .forEach((key: string) => {
-        validatorObjs[key] = source.validators[key].value;
+      .filter(shouldIncludeValidatorInSchema)
+      .forEach(key => {
+        validatorObjs[key] = source.validators[key]!.value;
       });
 
     if (source.type.dataType === 'any') {
@@ -525,7 +547,7 @@ export class SpecGenerator3 extends SpecGenerator {
     const properties: { [propertyName: string]: Swagger.Schema3 } = {};
 
     source.forEach(property => {
-      const swaggerType = this.getSwaggerType(property.type) as Swagger.Schema3;
+      let swaggerType = this.getSwaggerType(property.type) as Swagger.Schema3;
       const format = property.format as Swagger.DataFormat;
       swaggerType.description = property.description;
       swaggerType.example = property.example;
@@ -534,11 +556,9 @@ export class SpecGenerator3 extends SpecGenerator {
         swaggerType.default = property.default;
 
         Object.keys(property.validators)
-          .filter(key => {
-            return !key.startsWith('is') && key !== 'minDate' && key !== 'maxDate';
-          })
+          .filter(shouldIncludeValidatorInSchema)
           .forEach(key => {
-            swaggerType[key] = property.validators[key].value;
+            swaggerType = { ...swaggerType, [key]: property.validators[key]!.value };
           });
       }
       if (property.deprecated) {
@@ -551,14 +571,14 @@ export class SpecGenerator3 extends SpecGenerator {
         });
       }
 
-      properties[property.name] = swaggerType as Swagger.Schema;
+      properties[property.name] = swaggerType;
     });
 
     return properties;
   }
 
   protected getSwaggerTypeForReferenceType(referenceType: Tsoa.ReferenceType): Swagger.BaseSchema {
-    return { $ref: `#/components/schemas/${referenceType.refName}` };
+    return { $ref: `#/components/schemas/${encodeURIComponent(referenceType.refName)}` };
   }
 
   protected getSwaggerTypeForPrimitiveType(dataType: Tsoa.PrimitiveTypeLiteral): Swagger.Schema {
@@ -584,14 +604,14 @@ export class SpecGenerator3 extends SpecGenerator {
   // duplicate types.
   private groupEnums(types: Array<Swagger.Schema | Swagger.BaseSchema>) {
     const returnTypes: Array<Swagger.Schema | Swagger.BaseSchema> = [];
-    const enumValuesByType = {};
+    const enumValuesByType: Record<string, Record<string, boolean | string | number | null>> = {};
     for (const type of types) {
       if (type.enum && type.type) {
         for (const enumValue of type.enum) {
           if (!enumValuesByType[type.type]) {
-            enumValuesByType[type.type] = [];
+            enumValuesByType[type.type] = {};
           }
-          enumValuesByType[type.type][enumValue] = enumValue;
+          enumValuesByType[type.type][String(enumValue)] = enumValue;
         }
       }
       // preserve non-enum types
@@ -643,6 +663,13 @@ export class SpecGenerator3 extends SpecGenerator {
         if (swaggerType.$ref) {
           return { allOf: [swaggerType], nullable };
         }
+
+        // Note that null must be explicitly included in the list of enum values. Using nullable: true alone is not enough here.
+        // https://swagger.io/docs/specification/data-models/enums/
+        if (swaggerType.enum) {
+          swaggerType.enum.push(null);
+        }
+
         return { ...(title && { title }), ...swaggerType, nullable };
       } else {
         return { ...(title && { title }), anyOf: actualSwaggerTypes, nullable };
