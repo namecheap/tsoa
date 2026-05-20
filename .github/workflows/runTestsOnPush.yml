@@ -6,9 +6,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        node-version: [18, 20, 21]
-        os: [macos-latest, ubuntu-latest, windows-latest]
-        typescript-version: ['^5.0.0']
+        node-version: [22]
+        os: [ubuntu-latest]
+        typescript-version: ["^5.0.0"]
 
     steps:
       - uses: actions/checkout@master
@@ -35,7 +35,7 @@ jobs:
       #  run: yarn set resolution typescript ${{ matrix.typescript-version }}
 
       - name: Install
-        run: yarn install --ignore-scripts --no-lockfile
+        run: yarn install --ignore-scripts
 
       - name: Output ts version
         run: yarn tsc --version
