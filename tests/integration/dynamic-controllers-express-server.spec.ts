@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import 'mocha';
-import * as request from 'supertest';
+import request from 'supertest';
 import { base64image } from '../fixtures/base64image';
 import { app } from '../fixtures/express-dynamic-controllers/server';
 import {
@@ -15,7 +15,7 @@ import {
   ValidateMapStringToNumber,
   ValidateModel,
 } from '../fixtures/testModel';
-import TestAgent = require('supertest/lib/agent');
+import type TestAgent from 'supertest/lib/agent';
 
 const basePath = '/v1';
 

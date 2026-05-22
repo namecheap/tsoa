@@ -56,7 +56,7 @@
     "typedoc": "^0.26.7"
   },
   "resolutions": {
-    "typescript": "^5.2.2"
+    "typescript": "^6.0.0"
   },
   "repository": {
     "type": "git",

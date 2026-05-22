@@ -1,6 +1,6 @@
-import * as bodyParser from 'body-parser';
-import * as express from 'express';
-import * as methodOverride from 'method-override';
+import bodyParser from 'body-parser';
+import express from 'express';
+import methodOverride from 'method-override';
 import '../controllers/rootController';
 
 import { RegisterRoutes } from './routes';
@@ -18,7 +18,7 @@ router.use((req: any, res: any, next: express.NextFunction) => {
   next();
 });
 
-import multer = require('multer');
+import multer from 'multer';
 
 (RegisterRoutes as (router: express.Router, options: { multer: ReturnType<typeof multer> }) => void)(router, {
   multer: multer({

@@ -1,6 +1,6 @@
 import { Config, Tsoa } from '@namecheap/tsoa-runtime';
 import { minimatch } from 'minimatch';
-import { createProgram, forEachChild, isClassDeclaration, type ClassDeclaration, type CompilerOptions, type Program, type TypeChecker } from 'typescript';
+import { convertCompilerOptionsFromJson, createProgram, forEachChild, isClassDeclaration, type ClassDeclaration, type CompilerOptions, type Program, type TypeChecker } from 'typescript';
 import { getDecorators } from '../utils/decoratorUtils';
 import { importClassesFromDirectories } from '../utils/importClassesFromDirectories';
 import { ControllerGenerator } from './controllerGenerator';
@@ -35,7 +35,7 @@ export class MetadataGenerator {
     generatorOptions?: MetadataGeneratorOptions,
   ) {
     TypeResolver.clearCache();
-    this.program = controllers ? this.setProgramToDynamicControllersFiles(controllers, esm) : createProgram([entryFile], compilerOptions || {});
+    this.program = controllers ? this.setProgramToDynamicControllersFiles(controllers, esm) : createProgram([entryFile], this.resolveCompilerOptions(compilerOptions));
     this.typeChecker = this.program.getTypeChecker();
 
     this.securityGenerator = generatorOptions?.securityGenerator;
@@ -62,7 +62,16 @@ export class MetadataGenerator {
       throw new GenerateMetadataError(`[${controllers.join(', ')}] globs found 0 controllers.`);
     }
 
-    return createProgram(allGlobFiles, this.compilerOptions || {});
+    return createProgram(allGlobFiles, this.resolveCompilerOptions(this.compilerOptions));
+  }
+
+  // [namecheap] Callers (e.g. host app DefaultGenerator) pass compilerOptions as raw JSON
+  // (string values like target:'ES2020'). TypeScript's createProgram requires numeric enum
+  // values, so we normalise via convertCompilerOptionsFromJson before every createProgram call.
+  private resolveCompilerOptions(options?: CompilerOptions): CompilerOptions {
+    if (!options) return {};
+    const { options: converted } = convertCompilerOptionsFromJson(options, process.cwd());
+    return converted;
   }
 
   private extractNodeFromProgramSourceFiles() {

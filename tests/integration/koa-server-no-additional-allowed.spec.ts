@@ -1,9 +1,9 @@
 import { expect } from 'chai';
 import 'mocha';
-import * as request from 'supertest';
+import request from 'supertest';
 import { server } from '../fixtures/koaNoAdditional/server';
 import { Gender, GenericRequest, ParameterTestModel, TestModel, ValidateMapStringToAny, ValidateMapStringToNumber, ValidateModel } from '../fixtures/testModel';
-import TestAgent = require('supertest/lib/agent');
+import type TestAgent from 'supertest/lib/agent';
 
 const basePath = '/v1';
 

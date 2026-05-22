@@ -3,7 +3,7 @@ import { expect } from 'chai';
 import { readFileSync } from 'fs';
 import 'mocha';
 import { resolve } from 'path';
-import * as request from 'supertest';
+import request from 'supertest';
 import { base64image } from '../fixtures/base64image';
 import { stateOf } from '../fixtures/controllers/middlewaresExpressController';
 import { state } from '../fixtures/controllers/middlewaresHierarchyController';
@@ -20,7 +20,7 @@ import {
   ValidateMapStringToNumber,
   ValidateModel,
 } from '../fixtures/testModel';
-import TestAgent = require('supertest/lib/agent');
+import type TestAgent from 'supertest/lib/agent';
 
 const basePath = '/v1';
 

@@ -1,12 +1,12 @@
 import { expect } from 'chai';
 import 'mocha';
 import 'reflect-metadata';
-import * as request from 'supertest';
+import request from 'supertest';
 import { iocContainer } from '../fixtures/inversify/ioc';
 import { ManagedService } from '../fixtures/inversify/managedService';
 import { app } from '../fixtures/inversify/server';
 import { TestModel, TestSubModel } from '../fixtures/testModel';
-import TestAgent = require('supertest/lib/agent');
+import type TestAgent from 'supertest/lib/agent';
 
 const basePath = '/v1';
 

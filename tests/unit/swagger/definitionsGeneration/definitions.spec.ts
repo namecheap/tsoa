@@ -1969,28 +1969,28 @@ describe('Definition generation', () => {
               {
                 properties: {
                   boolValue1: {
-                    type: 'string',
+                    type: 'boolean',
                     default: true,
                     description: undefined,
                     example: undefined,
                     format: undefined,
                   },
                   boolValue2: {
-                    type: 'string',
+                    type: 'boolean',
                     default: true,
                     description: undefined,
                     example: undefined,
                     format: undefined,
                   },
                   boolValue3: {
-                    type: 'string',
+                    type: 'boolean',
                     default: false,
                     description: undefined,
                     example: undefined,
                     format: undefined,
                   },
                   boolValue4: {
-                    type: 'string',
+                    type: 'boolean',
                     default: undefined,
                     description: undefined,
                     example: undefined,

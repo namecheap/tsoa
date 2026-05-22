@@ -1,9 +1,9 @@
 import { expect } from 'chai';
 import 'mocha';
 import 'reflect-metadata';
-import * as request from 'supertest';
+import request from 'supertest';
 import { app } from '../fixtures/inversify-dynamic-container/server';
-import TestAgent = require('supertest/lib/agent');
+import type TestAgent from 'supertest/lib/agent';
 
 const basePath = '/v1';
 

@@ -455,6 +455,10 @@ export class SpecGenerator2 extends SpecGenerator {
         swaggerType['x-nullable'] = true;
         return swaggerType;
       }
+    } else if (typesWithoutUndefined.length === 1) {
+      // A type that is optional (T | undefined) — return the underlying type directly.
+      // In Swagger 2, optionality is expressed via the required array, not the type itself.
+      return this.getSwaggerType(typesWithoutUndefined[0]);
     } else if (process.env.NODE_ENV !== 'tsoa_test') {
       // eslint-disable-next-line no-console
       console.warn('Swagger 2.0 does not support union types beyond string literals.\n' + 'If you would like to take advantage of this, please change tsoa.json\'s "specVersion" to 3.');

@@ -3,11 +3,11 @@ import { expect } from 'chai';
 import { readFileSync } from 'fs';
 import 'mocha';
 import { resolve } from 'path';
-import * as request from 'supertest';
+import request from 'supertest';
 import { stateOf } from '../fixtures/controllers/middlewaresHapiController';
 import { server } from '../fixtures/hapi/server';
 import { Gender, GenericModel, GenericRequest, Model, ParameterTestModel, TestClassModel, TestModel, ValidateMapStringToAny, ValidateMapStringToNumber, ValidateModel } from '../fixtures/testModel';
-import TestAgent = require('supertest/lib/agent');
+import type TestAgent from 'supertest/lib/agent';
 
 const basePath = '/v1';
 

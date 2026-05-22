@@ -63,8 +63,21 @@ export class TypeResolver {
     }
 
     if (ts.isUnionTypeNode(this.typeNode)) {
+      const referencerUnionTypes = this.referencer?.isUnion() ? this.referencer.types : undefined;
       const types = this.typeNode.types.map(type => {
-        return new TypeResolver(type, this.current, this.parentNode, this.context).resolve();
+        let memberReferencer: ts.Type | undefined;
+        if (referencerUnionTypes && this.typeNode.pos === -1) {
+          // Synthetic union TypeNode: match member by type flag rather than position,
+          // since typeToTypeNode and union .types may be in different order.
+          if (type.kind === ts.SyntaxKind.UndefinedKeyword) {
+            memberReferencer = referencerUnionTypes.find(t => !!(t.flags & ts.TypeFlags.Undefined));
+          } else if (type.kind === ts.SyntaxKind.NullKeyword) {
+            memberReferencer = referencerUnionTypes.find(t => !!(t.flags & ts.TypeFlags.Null));
+          } else {
+            memberReferencer = referencerUnionTypes.find(t => !(t.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Null)));
+          }
+        }
+        return new TypeResolver(type, this.current, this.parentNode, this.context, memberReferencer).resolve();
       });
 
       const unionMetaType: Tsoa.UnionType = {
@@ -194,13 +207,23 @@ export class TypeResolver {
             .filter(property => isIgnored(property) === false)
             // Transform to property
             .map(property => {
-              const propertyType = this.current.typeChecker.getTypeOfSymbolAtLocation(property, this.typeNode);
-
-              const typeNode = this.current.typeChecker.typeToTypeNode(propertyType, undefined, ts.NodeBuilderFlags.NoTruncation)!;
-              const parent = getOneOrigDeclaration(property); //If there are more declarations, we need to get one of them, from where we want to recognize jsDoc
-              const type = new TypeResolver(typeNode, this.current, parent, this.context, propertyType).resolve();
-
+              const propertyType = this.current.typeChecker.getTypeOfSymbol(property);
               const required = !this.hasFlag(property, ts.SymbolFlags.Optional);
+
+              // TypeScript v6 includes `undefined` in getTypeOfSymbol for optional properties.
+              // Strip it since optionality is encoded in `required` and including undefined
+              // causes enum types to go through the union path (losing explicit nullable: false).
+              let effectiveType: ts.Type = propertyType;
+              if (!required && propertyType.isUnion()) {
+                const withoutUndefined = propertyType.types.filter(t => !(t.flags & ts.TypeFlags.Undefined));
+                if (withoutUndefined.length === 1) {
+                  effectiveType = withoutUndefined[0];
+                }
+              }
+
+              const typeNode = this.current.typeChecker.typeToTypeNode(effectiveType, undefined, ts.NodeBuilderFlags.NoTruncation)!;
+              const parent = getOneOrigDeclaration(property); //If there are more declarations, we need to get one of them, from where we want to recognize jsDoc
+              const type = new TypeResolver(typeNode, this.current, parent, this.context, effectiveType).resolve();
 
               const comments = property.getDocumentationComment(this.current.typeChecker);
               const description = comments.length ? ts.displayPartsToString(comments) : undefined;
@@ -316,7 +339,7 @@ export class TypeResolver {
         if (type.isIndexType()) {
           // in case of generic: keyof T. Not handles all possible cases
           const symbol = type.type.getSymbol();
-          if (symbol && symbol.getFlags() & ts.TypeFlags.TypeParameter) {
+          if (symbol && symbol.getFlags() & ts.SymbolFlags.TypeParameter) {
             const typeName = symbol.getEscapedName();
             throwUnless(typeof typeName === 'string', new GenerateMetadataError(`typeName is not string, but ${typeof typeName}`, typeNode));
 
@@ -428,18 +451,18 @@ export class TypeResolver {
       const typeOfObjectType = typeChecker.getTypeFromTypeNode(objectType);
       const type = isNumberIndexType ? typeOfObjectType.getNumberIndexType() : typeOfObjectType.getStringIndexType();
       throwUnless(type, new GenerateMetadataError(`Could not determine ${isNumberIndexType ? 'number' : 'string'} index on ${typeChecker.typeToString(typeOfObjectType)}`, typeNode));
-      return new TypeResolver(typeChecker.typeToTypeNode(type, objectType, ts.NodeBuilderFlags.NoTruncation)!, current, typeNode, context).resolve();
+      return new TypeResolver(typeChecker.typeToTypeNode(type, objectType, ts.NodeBuilderFlags.NoTruncation)!, current, typeNode, context, type).resolve();
     } else if (ts.isLiteralTypeNode(indexType) && (ts.isStringLiteral(indexType.literal) || ts.isNumericLiteral(indexType.literal))) {
       // Indexed by literal
       const hasType = (node: ts.Node | undefined): node is ts.HasType => node !== undefined && Object.prototype.hasOwnProperty.call(node, 'type');
       const symbol = typeChecker.getPropertyOfType(typeChecker.getTypeFromTypeNode(objectType), indexType.literal.text);
       throwUnless(symbol, new GenerateMetadataError(`Could not determine the keys on ${typeChecker.typeToString(typeChecker.getTypeFromTypeNode(objectType))}`, typeNode));
-      if (hasType(symbol.valueDeclaration) && symbol.valueDeclaration.type) {
+      if (hasType(symbol.valueDeclaration) && symbol.valueDeclaration.type && !ts.isMappedTypeNode(symbol.valueDeclaration)) {
         return new TypeResolver(symbol.valueDeclaration.type, current, typeNode, context).resolve();
       }
       const declaration = typeChecker.getTypeOfSymbolAtLocation(symbol, objectType);
       try {
-        return new TypeResolver(typeChecker.typeToTypeNode(declaration, objectType, ts.NodeBuilderFlags.NoTruncation)!, current, typeNode, context).resolve();
+        return new TypeResolver(typeChecker.typeToTypeNode(declaration, objectType, ts.NodeBuilderFlags.NoTruncation)!, current, typeNode, context, declaration).resolve();
       } catch {
         throw new GenerateMetadataError(
           `Could not determine the keys on ${typeChecker.typeToString(typeChecker.getTypeFromTypeNode(typeChecker.typeToTypeNode(declaration, undefined, ts.NodeBuilderFlags.NoTruncation)!))}`,
@@ -789,7 +812,7 @@ export class TypeResolver {
         const referenceTypes: Tsoa.ReferenceType[] = [];
         for (const declaration of declarations) {
           if (ts.isTypeAliasDeclaration(declaration)) {
-            const referencer = node.pos !== -1 ? this.current.typeChecker.getTypeFromTypeNode(node) : undefined;
+            const referencer = node.pos !== -1 ? this.current.typeChecker.getTypeFromTypeNode(node) : this.referencer;
             referenceTypes.push(new ReferenceTransformer().transform(declaration, refTypeName, this, referencer));
           } else if (EnumTransformer.transformable(declaration)) {
             referenceTypes.push(new EnumTransformer().transform(this, declaration, refTypeName));
@@ -950,9 +973,14 @@ export class TypeResolver {
 
     if (modelTypes.length > 1) {
       // remove types that are from typescript e.g. 'Account'
-      modelTypes = modelTypes.filter(modelType => {
+      // Only apply filter if it leaves at least one declaration; built-ins like Error have all
+      // declarations inside node_modules/typescript (TypeScript v6 ships multiple lib files).
+      const nonTsModelTypes = modelTypes.filter(modelType => {
         return modelType.getSourceFile().fileName.replace(/\\/g, '/').toLowerCase().indexOf('node_modules/typescript') <= -1;
       });
+      if (nonTsModelTypes.length) {
+        modelTypes = nonTsModelTypes;
+      }
 
       modelTypes = this.getDesignatedModels(modelTypes, typeName);
     }

@@ -530,7 +530,7 @@ namespace Namespace2 {
   }
 
   // eslint-disable-next-line @typescript-eslint/prefer-namespace-keyword, @typescript-eslint/no-namespace
-  export module Namespace2 {
+  export namespace Namespace2 {
     export interface NamespaceType {
       inModule: string;
       other?: NamespaceType;

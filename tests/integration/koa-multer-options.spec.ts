@@ -1,11 +1,11 @@
 import { expect } from 'chai';
 import 'mocha';
-import * as request from 'supertest';
+import request from 'supertest';
 import { server } from '../fixtures/koa-multer-options/server';
 import { resolve } from 'path';
 import * as os from 'os';
 import { unlinkSync, writeFileSync } from 'fs';
-import TestAgent = require('supertest/lib/agent');
+import type TestAgent from 'supertest/lib/agent';
 
 const basePath = '/v1';
 

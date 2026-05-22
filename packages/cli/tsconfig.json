@@ -9,6 +9,7 @@
     "lib": ["es2021"],
     "typeRoots": ["node_modules/@types", "./typings"],
     "downlevelIteration": true,
+    "ignoreDeprecations": "6.0",
     "experimentalDecorators": true,
     "declaration": true,
     "noUnusedLocals": true,

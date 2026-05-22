@@ -4,6 +4,5 @@
   "exclude": ["esm/**/*"],
   "require": ["ts-node/register", "tsconfig-paths/register"],
   "exit": true,
-  "colors": true,
-  "node-option": ["no-experimental-strip-types"]
+  "colors": true
 }
