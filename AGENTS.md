@@ -92,3 +92,27 @@ Extended `getInitializerValue` to handle more expression forms when reading deco
 - **`as const` / type assertions** — handles `AsExpression` (`x as const`), unwrapping it to evaluate the inner expression
 - **Arithmetic expressions** — handles `BinaryExpression` for `*` and `/` operators (e.g. `15 * 60` evaluates to `900`)
 - **`ImportSpecifier`** — refactored into a shared `getImportSpecifierValue` helper to avoid duplication
+
+---
+
+### 4. TypeScript v6 Compatibility
+
+**Files:** `packages/cli/src/metadataGeneration/typeResolver.ts`, `packages/cli/src/swagger/specGenerator2.ts`, `packages/cli/src/metadataGeneration/metadataGenerator.ts`
+
+#### `typeResolver.ts`
+
+- **`getTypeOfSymbol` instead of `getTypeOfSymbolAtLocation`** — TS v6 removed `getTypeOfSymbolAtLocation`; replaced with `getTypeOfSymbol` when resolving object property types.
+- **Optional property `undefined` stripping** — TS v6's `getTypeOfSymbol` includes `undefined` in the returned union for optional properties. The code now strips it before calling `typeToTypeNode`, so optional enum properties don't fall through the union path.
+- **Synthetic union member matching** — When a union `TypeNode` has `pos === -1` (synthetic, produced by `typeToTypeNode`), member order may differ from the semantic union's `.types`. Members are now matched by `TypeFlags` (Undefined / Null / other) instead of position.
+- **`SymbolFlags.TypeParameter` fix** — `symbol.getFlags()` returns `SymbolFlags`, not `TypeFlags`; corrected the flag constant used for generic `keyof T` detection.
+- **`isMappedTypeNode` guard** — When resolving indexed access types, skip following `symbol.valueDeclaration.type` if the declaration is a mapped type node; TS v6 can produce mapped type declarations where the `.type` doesn't resolve correctly.
+- **Built-in declaration filter** — The filter that drops declarations inside `node_modules/typescript` (to exclude lib types) now only applies when it leaves at least one declaration. TS v6 ships built-ins like `Error` with all declarations inside its own lib files, so the old filter would drop everything.
+- **`this.referencer` fallback for synthetic type aliases** — When resolving a type alias on a synthetic `TypeNode` (`pos === -1`), the referencer is now `this.referencer` instead of `undefined`, preserving context through the synthetic node boundary.
+
+#### `specGenerator2.ts`
+
+- **`T | undefined` collapsing** — When a union reduces to a single non-undefined type (i.e. `T | undefined`), the underlying type is returned directly instead of generating a Swagger union. Optionality is expressed via the `required` array, not the type.
+
+#### `metadataGenerator.ts`
+
+- **Raw `compilerOptions` normalisation** — Added `resolveCompilerOptions()` which runs options through `convertCompilerOptionsFromJson` before every `createProgram` call. Callers (e.g. host apps) often pass string values (`target: 'ES2020'`) from JSON config; TypeScript's `createProgram` requires numeric enum values.
