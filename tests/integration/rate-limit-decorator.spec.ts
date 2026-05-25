@@ -7,7 +7,7 @@ import { RateLimitByUserIdProcessor, RateLimitByUserIpProcessor } from '../fixtu
 
 describe('Rate Limit Decorator Integration Test', () => {
   it('should generate OpenAPI spec with rate limit extension using decorator processor', () => {
-    const metadata = new MetadataGenerator(path.join(__dirname, '../fixtures/controllers/rateLimitController.ts'), {}, [], undefined, {
+    const metadata = new MetadataGenerator(path.join(__dirname, '../fixtures/controllers/rateLimitController.ts'), {}, [], undefined, undefined, undefined, undefined, {
       customDecoratorProcessors: {
         RateLimitByUserId: RateLimitByUserIdProcessor,
       },
@@ -38,7 +38,7 @@ describe('Rate Limit Decorator Integration Test', () => {
 
   it('should resolve imported consts as decorator arguments', () => {
     const entry = path.join(__dirname, '../fixtures/controllers/rateLimitController.ts');
-    const metadata = new MetadataGenerator(entry, {}, [], undefined, {
+    const metadata = new MetadataGenerator(entry, {}, [], undefined, undefined, undefined, undefined, {
       customDecoratorProcessors: {
         RateLimitByUserIp: RateLimitByUserIpProcessor,
       },

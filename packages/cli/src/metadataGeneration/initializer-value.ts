@@ -15,7 +15,17 @@ const getImportSpecifierValue = (importSpecifier: ts.ImportSpecifier, typeChecke
   return getInitializerValue(extractInitializer(declaration), typeChecker);
 };
 
-export const getInitializerValue = (initializer?: ts.Expression | ts.ImportSpecifier, typeChecker?: ts.TypeChecker, type?: Tsoa.Type) => {
+export type InitializerValue = string | number | boolean | undefined | null | InitializerValue[];
+export type DefinedInitializerValue = string | number | boolean | null | DefinedInitializerValue[];
+export function isNonUndefinedInitializerValue(value: InitializerValue): value is DefinedInitializerValue {
+  if (Array.isArray(value)) {
+    return value.every(isNonUndefinedInitializerValue);
+  } else {
+    return value !== undefined;
+  }
+}
+
+export function getInitializerValue(initializer?: ts.Expression | ts.ImportSpecifier, typeChecker?: ts.TypeChecker, type?: Tsoa.Type): InitializerValue | DefinedInitializerValue {
   if (!initializer || !typeChecker) {
     return;
   }
@@ -44,11 +54,23 @@ export const getInitializerValue = (initializer?: ts.Expression | ts.ImportSpeci
       return arrayLiteral.elements.map(element => getInitializerValue(element, typeChecker));
     }
     case ts.SyntaxKind.StringLiteral:
+    case ts.SyntaxKind.NoSubstitutionTemplateLiteral:
       return (initializer as ts.StringLiteral).text;
     case ts.SyntaxKind.TrueKeyword:
       return true;
     case ts.SyntaxKind.FalseKeyword:
       return false;
+    case ts.SyntaxKind.PrefixUnaryExpression: {
+      const prefixUnary = initializer as ts.PrefixUnaryExpression;
+      switch (prefixUnary.operator) {
+        case ts.SyntaxKind.PlusToken:
+          return Number((prefixUnary.operand as ts.NumericLiteral).text);
+        case ts.SyntaxKind.MinusToken:
+          return Number(`-${(prefixUnary.operand as ts.NumericLiteral).text}`);
+        default:
+          throw new Error(`Unsupport prefix operator token: ${prefixUnary.operator}`);
+      }
+    }
     case ts.SyntaxKind.NumberKeyword:
     case ts.SyntaxKind.FirstLiteralToken:
       return Number((initializer as ts.NumericLiteral).text);
@@ -104,4 +126,4 @@ export const getInitializerValue = (initializer?: ts.Expression | ts.ImportSpeci
       return;
     }
   }
-};
+}

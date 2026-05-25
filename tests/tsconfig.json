@@ -2,9 +2,10 @@
   "compilerOptions": {
     "rootDir": ".",
     "baseUrl": ".",
+    "ignoreDeprecations": "6.0",
     "module": "commonjs",
-    "target": "ES2019",
-    "lib": ["ES2019"],
+    "target": "es2021",
+    "lib": ["es2021"],
     "typeRoots": ["node_modules/@types", "./typings"],
     "downlevelIteration": true,
     "experimentalDecorators": true,
@@ -13,6 +14,7 @@
     "noEmit": true,
     "strict": true,
     "noImplicitAny": false,
+    "esModuleInterop": true,
     "skipLibCheck": true,
     "paths": {
       "@namecheap/tsoa-cli/*": ["../packages/cli/src/*"],

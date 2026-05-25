@@ -1,12 +1,12 @@
-import * as mm from 'minimatch';
-import * as ts from 'typescript';
+import { Config, Tsoa } from '@namecheap/tsoa-runtime';
+import { minimatch } from 'minimatch';
+import { convertCompilerOptionsFromJson, createProgram, forEachChild, isClassDeclaration, type ClassDeclaration, type CompilerOptions, type Program, type TypeChecker } from 'typescript';
+import { getDecorators } from '../utils/decoratorUtils';
 import { importClassesFromDirectories } from '../utils/importClassesFromDirectories';
 import { ControllerGenerator } from './controllerGenerator';
 import { NodeDecoratorProcessor } from './types/nodeDecoratorProcessor';
 import { GenerateMetadataError } from './exceptions';
-import { Tsoa } from '@namecheap/tsoa-runtime';
 import { TypeResolver } from './typeResolver';
-import { getDecorators } from '../utils/decoratorUtils';
 import { SecurityGenerator } from './securityGenerator';
 
 export interface MetadataGeneratorOptions {
@@ -15,18 +15,27 @@ export interface MetadataGeneratorOptions {
 }
 
 export class MetadataGenerator {
-  public readonly controllerNodes = new Array<ts.ClassDeclaration>();
-  public readonly typeChecker: ts.TypeChecker;
+  public readonly controllerNodes = new Array<ClassDeclaration>();
+  public readonly typeChecker: TypeChecker;
   public readonly securityGenerator: SecurityGenerator | undefined;
   public readonly customDecoratorProcessors: Record<string, NodeDecoratorProcessor> | undefined;
-
-  private readonly program: ts.Program;
+  private readonly program: Program;
   private referenceTypeMap: Tsoa.ReferenceTypeMap = {};
-  private circularDependencyResolvers = new Array<(referenceTypes: Tsoa.ReferenceTypeMap) => void>();
+  private modelDefinitionPosMap: { [name: string]: Array<{ fileName: string; pos: number }> } = {};
+  private expressionOrigNameMap: Record<string, string> = {};
 
-  constructor(entryFile: string, private readonly compilerOptions?: ts.CompilerOptions, private readonly ignorePaths?: string[], controllers?: string[], generatorOptions?: MetadataGeneratorOptions) {
+  constructor(
+    entryFile: string,
+    private readonly compilerOptions?: CompilerOptions,
+    private readonly ignorePaths?: string[],
+    controllers?: string[],
+    private readonly rootSecurity: Tsoa.Security[] = [],
+    public readonly defaultNumberType: NonNullable<Config['defaultNumberType']> = 'double',
+    esm = false,
+    generatorOptions?: MetadataGeneratorOptions,
+  ) {
     TypeResolver.clearCache();
-    this.program = controllers ? this.setProgramToDynamicControllersFiles(controllers) : ts.createProgram([entryFile], compilerOptions || {});
+    this.program = controllers ? this.setProgramToDynamicControllersFiles(controllers, esm) : createProgram([entryFile], this.resolveCompilerOptions(compilerOptions));
     this.typeChecker = this.program.getTypeChecker();
 
     this.securityGenerator = generatorOptions?.securityGenerator;
@@ -40,7 +49,6 @@ export class MetadataGenerator {
 
     this.checkForMethodSignatureDuplicates(controllers);
     this.checkForPathParamSignatureDuplicates(controllers);
-    this.circularDependencyResolvers.forEach(c => c(this.referenceTypeMap));
 
     return {
       controllers,
@@ -48,27 +56,36 @@ export class MetadataGenerator {
     };
   }
 
-  private setProgramToDynamicControllersFiles(controllers: string[]) {
-    const allGlobFiles = importClassesFromDirectories(controllers);
+  private setProgramToDynamicControllersFiles(controllers: string[], esm: boolean) {
+    const allGlobFiles = importClassesFromDirectories(controllers, esm ? ['.mts', '.ts', '.cts'] : ['.ts']);
     if (allGlobFiles.length === 0) {
       throw new GenerateMetadataError(`[${controllers.join(', ')}] globs found 0 controllers.`);
     }
 
-    return ts.createProgram(allGlobFiles, this.compilerOptions || {});
+    return createProgram(allGlobFiles, this.resolveCompilerOptions(this.compilerOptions));
+  }
+
+  // [namecheap] Callers (e.g. host app DefaultGenerator) pass compilerOptions as raw JSON
+  // (string values like target:'ES2020'). TypeScript's createProgram requires numeric enum
+  // values, so we normalise via convertCompilerOptionsFromJson before every createProgram call.
+  private resolveCompilerOptions(options?: CompilerOptions): CompilerOptions {
+    if (!options) return {};
+    const { options: converted } = convertCompilerOptionsFromJson(options, process.cwd());
+    return converted;
   }
 
   private extractNodeFromProgramSourceFiles() {
     this.program.getSourceFiles().forEach(sf => {
       if (this.ignorePaths && this.ignorePaths.length) {
         for (const path of this.ignorePaths) {
-          if (mm(sf.fileName, path)) {
+          if (minimatch(sf.fileName, path)) {
             return;
           }
         }
       }
 
-      ts.forEachChild(sf, node => {
-        if (ts.isClassDeclaration(node) && getDecorators(node, identifier => identifier.text === 'Route').length) {
+      forEachChild(sf, node => {
+        if (isClassDeclaration(node) && getDecorators(node, identifier => identifier.text === 'Route').length) {
           this.controllerNodes.push(node);
         }
       });
@@ -219,7 +236,7 @@ export class MetadataGenerator {
 
   public AddReferenceType(referenceType: Tsoa.ReferenceType) {
     if (!referenceType.refName) {
-      return;
+      throw new Error('no reference type name found');
     }
     this.referenceTypeMap[referenceType.refName] = referenceType;
   }
@@ -228,13 +245,33 @@ export class MetadataGenerator {
     return this.referenceTypeMap[refName];
   }
 
-  public OnFinish(callback: (referenceTypes: Tsoa.ReferenceTypeMap) => void) {
-    this.circularDependencyResolvers.push(callback);
+  public CheckModelUnicity(refName: string, positions: Array<{ fileName: string; pos: number }>) {
+    if (!this.modelDefinitionPosMap[refName]) {
+      this.modelDefinitionPosMap[refName] = positions;
+    } else {
+      const origPositions = this.modelDefinitionPosMap[refName];
+      if (!(origPositions.length === positions.length && positions.every(pos => origPositions.find(origPos => pos.pos === origPos.pos && pos.fileName === origPos.fileName)))) {
+        throw new Error(`Found 2 different model definitions for model ${refName}: orig: ${JSON.stringify(origPositions)}, act: ${JSON.stringify(positions)}`);
+      }
+    }
+  }
+
+  public CheckExpressionUnicity(formattedRefName: string, refName: string) {
+    if (!this.expressionOrigNameMap[formattedRefName]) {
+      this.expressionOrigNameMap[formattedRefName] = refName;
+    } else {
+      if (this.expressionOrigNameMap[formattedRefName] !== refName) {
+        throw new Error(`Found 2 different type expressions for formatted name "${formattedRefName}": orig: "${this.expressionOrigNameMap[formattedRefName]}", act: "${refName}"`);
+      }
+    }
   }
 
   private buildControllers() {
+    if (this.controllerNodes.length === 0) {
+      throw new Error('no controllers found, check tsoa configuration');
+    }
     return this.controllerNodes
-      .map(classDeclaration => new ControllerGenerator(classDeclaration, this))
+      .map(classDeclaration => new ControllerGenerator(classDeclaration, this, this.rootSecurity))
       .filter(generator => generator.IsValid())
       .map(generator => generator.Generate());
   }

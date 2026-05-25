@@ -349,7 +349,7 @@ describe('Schema details generation', () => {
 
     describe('methods', () => {
       describe('operationId', () => {
-        const optionsWithOperationIdTemplate = Object.assign<{}, ExtendedSpecConfig, Partial<ExtendedSpecConfig>>({}, getDefaultExtendedOptions(), {
+        const optionsWithOperationIdTemplate = Object.assign<object, ExtendedSpecConfig, Partial<ExtendedSpecConfig>>({}, getDefaultExtendedOptions(), {
           operationIdTemplate: "{{replace controllerName 'Controller' ''}}_{{titleCase method.name}}",
         });
 
@@ -492,11 +492,18 @@ describe('Schema details generation', () => {
           });
         });
 
+        it('Should not generate models with hidden controller referenced.', () => {
+          const metadata = new MetadataGenerator('./fixtures/controllers/commonResponseHiddenModelController.ts').Generate();
+          const responseSpec = new SpecGenerator2(metadata, getDefaultExtendedOptions()).GetSpec();
+          expect(responseSpec.definitions).to.be.deep.eq({});
+        });
+
         describe('media types', () => {
           let mediaTypeTest;
           let requestAcceptHeaderTest;
 
-          before(() => {
+          before(function () {
+            this.timeout(10_000);
             const metadata = new MetadataGenerator('./fixtures/controllers/mediaTypeController.ts').Generate();
             mediaTypeTest = new SpecGenerator2(metadata, getDefaultExtendedOptions()).GetSpec();
 
@@ -589,6 +596,28 @@ describe('Schema details generation', () => {
           const examples = exampleSpec.paths['/ExampleTest/ResponseMultiExampleWithLabel']?.get?.responses?.[200]?.examples?.['application/json'];
 
           expect(examples).to.deep.eq('test example response');
+        });
+
+        it('uses minus prefix token number value at @Example model', () => {
+          const metadata = new MetadataGenerator('./fixtures/controllers/exampleController.ts').Generate();
+          const exampleSpec = new SpecGenerator2(metadata, getDefaultExtendedOptions()).GetSpec();
+          const examples = exampleSpec.paths['/ExampleTest/ResponseExampleWithMinusOperatorPrefixValue']?.get?.responses?.[200]?.examples?.['application/json'];
+
+          expect(examples).to.deep.eq({
+            id: -1,
+            description: 'test doc des',
+          });
+        });
+
+        it('uses plus prefix token number value at @Example model', () => {
+          const metadata = new MetadataGenerator('./fixtures/controllers/exampleController.ts').Generate();
+          const exampleSpec = new SpecGenerator2(metadata, getDefaultExtendedOptions()).GetSpec();
+          const examples = exampleSpec.paths['/ExampleTest/ResponseExampleWithPlusOperatorPrefixValue']?.get?.responses?.[200]?.examples?.['application/json'];
+
+          expect(examples).to.deep.eq({
+            id: 1,
+            description: 'test doc des',
+          });
         });
       });
     });
@@ -716,6 +745,275 @@ describe('Schema details generation', () => {
 
       expectTestModelSchema(responses?.['400']);
       expectTestModelSchema(responses?.['500']);
+    });
+
+    describe('With alias', () => {
+      it('creates a single error response for a single res parameter', () => {
+        const responses = spec.paths['/GetTest/Res_Alias']?.get?.responses;
+
+        expect(responses).to.have.all.keys('204', '400');
+
+        expectTestModelSchema(responses?.['400']);
+      });
+
+      it('creates multiple error responses for separate res parameters', () => {
+        const responses = spec.paths['/GetTest/MultipleRes_Alias']?.get?.responses;
+
+        expect(responses).to.have.all.keys('200', '400', '401');
+
+        expectTestModelSchema(responses?.['400']);
+        expectTestModelSchema(responses?.['401']);
+      });
+
+      it('creates multiple error responses for a combined res parameter', () => {
+        const responses = spec.paths['/GetTest/MultipleStatusCodeRes_Alias']?.get?.responses;
+
+        expect(responses).to.have.all.keys('204', '400', '500');
+
+        expectTestModelSchema(responses?.['400']);
+        expectTestModelSchema(responses?.['500']);
+      });
+    });
+  });
+
+  describe('security definitions', () => {
+    it('should reject http security scheme for OAS2', () => {
+      // Act
+      const optionsWithBearer = Object.assign({}, getDefaultExtendedOptions(), {
+        securityDefinitions: {
+          bearer: {
+            type: 'http',
+            scheme: 'bearer',
+          },
+        },
+      });
+      let errToTest: Error | null = null;
+      try {
+        const metadata = new MetadataGenerator('./fixtures/controllers/exampleController.ts').Generate();
+        new SpecGenerator2(metadata, optionsWithBearer).GetSpec();
+      } catch (err: any) {
+        errToTest = err;
+      }
+
+      // Assert
+      expect(errToTest!.message).to.match(/Swagger 2.0 does not support "http" security scheme/);
+    });
+
+    it('should reject openId security scheme for OAS2', () => {
+      const optionsWithOpenId = Object.assign({}, getDefaultExtendedOptions(), {
+        securityDefinitions: {
+          openid_auth: {
+            type: 'openIdConnect',
+            url: 'https://example.com/.well-known/openid-configuration',
+          },
+        },
+      });
+      let errToTest: Error | null = null;
+      try {
+        const metadata = new MetadataGenerator('./fixtures/controllers/exampleController.ts').Generate();
+        new SpecGenerator2(metadata, optionsWithOpenId).GetSpec();
+      } catch (err: any) {
+        errToTest = err;
+      }
+
+      // Assert
+      expect(errToTest!.message).to.match(/Swagger 2.0 does not support "openIdConnect" security scheme/);
+    });
+  });
+
+  describe('Schema definitions generation', () => {
+    const name = 'Readonly_TestClassModel_';
+    const schema = spec.definitions?.[name];
+
+    it('should be equal to generated model', () => {
+      expect(schema).to.deep.eq({
+        properties: {
+          account: { $ref: '#/definitions/Account', format: undefined, description: undefined, example: undefined },
+          defaultValue2: { type: 'string', default: 'Default Value 2', description: undefined, format: undefined, example: undefined },
+          enumKeys: {
+            default: undefined,
+            description: undefined,
+            enum: ['OK', 'KO'],
+            example: undefined,
+            format: undefined,
+            type: 'string',
+            'x-nullable': false,
+          },
+          keyInterface: { type: 'string', default: undefined, description: undefined, format: undefined, example: undefined, enum: ['id'], 'x-nullable': false },
+          indexedType: { type: 'string', default: undefined, description: undefined, format: undefined, example: undefined },
+          indexedTypeToInterface: { $ref: '#/definitions/IndexedInterface', description: undefined, format: undefined, example: undefined },
+          indexedTypeToClass: { $ref: '#/definitions/IndexedClass', description: undefined, format: undefined, example: undefined },
+          indexedTypeToAlias: { $ref: '#/definitions/IndexedInterface', description: undefined, format: undefined, example: undefined },
+          indexedResponse: {
+            $ref: '#/definitions/Record_id.string_',
+            description: undefined,
+            example: undefined,
+            format: undefined,
+          },
+          indexedResponseObject: {
+            $ref: '#/definitions/Record_id._myProp1-string__',
+            description: undefined,
+            example: undefined,
+            format: undefined,
+          },
+          arrayUnion: {
+            default: undefined,
+            description: undefined,
+            enum: ['foo', 'bar'],
+            example: undefined,
+            format: undefined,
+            type: 'string',
+            'x-nullable': false,
+          },
+          objectUnion: {
+            default: undefined,
+            description: undefined,
+            enum: ['foo', 'bar'],
+            example: undefined,
+            format: undefined,
+            type: 'string',
+            'x-nullable': false,
+          },
+          publicStringProperty: {
+            type: 'string',
+            minLength: 3,
+            maxLength: 20,
+            pattern: '^[a-zA-Z]+$',
+            default: undefined,
+            description: 'This is a description of a public string property',
+            format: undefined,
+            example: 'classPropExample',
+            title: 'Example title',
+          },
+          optionalPublicStringProperty: { type: 'string', minLength: 0, maxLength: 10, default: undefined, description: undefined, format: undefined, example: undefined },
+          emailPattern: {
+            type: 'string',
+            default: undefined,
+            description: undefined,
+            format: 'email',
+            pattern: '^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\\.[a-zA-Z0-9-.]+$',
+            example: undefined,
+          },
+          stringProperty: { type: 'string', default: undefined, description: undefined, format: undefined, example: undefined },
+          deprecated1: { type: 'boolean', default: undefined, description: undefined, format: undefined, example: undefined, 'x-deprecated': true },
+          deprecated2: { type: 'boolean', default: undefined, description: undefined, format: undefined, example: undefined, 'x-deprecated': true },
+          extensionTest: { type: 'boolean', default: undefined, description: undefined, format: undefined, example: undefined, 'x-key-1': 'value-1', 'x-key-2': 'value-2' },
+          extensionComment: { type: 'boolean', default: undefined, description: undefined, format: undefined, example: undefined, 'x-key-1': 'value-1', 'x-key-2': 'value-2' },
+          stringExample: { type: 'string', default: undefined, description: undefined, format: undefined, example: 'stringValue' },
+          objectExample: {
+            type: 'object',
+            default: undefined,
+            description: undefined,
+            format: undefined,
+            example: {
+              id: 1,
+              label: 'labelValue',
+            },
+            properties: {
+              id: {
+                default: undefined,
+                description: undefined,
+                example: undefined,
+                format: 'double',
+                type: 'number',
+              },
+              label: {
+                default: undefined,
+                description: undefined,
+                example: undefined,
+                format: undefined,
+                type: 'string',
+              },
+            },
+            required: ['label', 'id'],
+          },
+          publicConstructorVar: { type: 'string', default: undefined, description: 'This is a description for publicConstructorVar', format: undefined, example: undefined },
+          readonlyConstructorArgument: { type: 'string', default: undefined, description: undefined, format: undefined, example: undefined },
+          optionalPublicConstructorVar: { type: 'string', default: undefined, description: undefined, format: undefined, example: undefined },
+          deprecatedPublicConstructorVar: { type: 'boolean', default: undefined, description: undefined, format: undefined, example: undefined, 'x-deprecated': true },
+          deprecatedPublicConstructorVar2: { type: 'boolean', default: undefined, description: undefined, format: undefined, example: undefined, 'x-deprecated': true },
+          id: { type: 'number', format: 'double', default: undefined, description: undefined, example: undefined },
+          defaultValue1: { type: 'string', default: 'Default Value 1', description: undefined, format: undefined, example: undefined },
+        },
+        required: ['account', 'enumKeys', 'publicStringProperty', 'stringProperty', 'publicConstructorVar', 'readonlyConstructorArgument', 'id'],
+        type: 'object',
+        default: undefined,
+        example: undefined,
+        format: undefined,
+        description: 'Make all properties in T readonly',
+      });
+    });
+  });
+
+  describe('should include valid params', () => {
+    it('should include query', () => {
+      const metadata = new MetadataGenerator('./fixtures/controllers/parameterController.ts').Generate();
+      const spec = new SpecGenerator2(metadata, getDefaultExtendedOptions()).GetSpec();
+
+      const method = spec.paths['/ParameterTest/ParamaterQueryAnyType'].get?.parameters ?? [];
+
+      expect(method).to.have.lengthOf(1);
+      const queryParam = method[0];
+      expect(queryParam.in).to.equal('query');
+    });
+
+    it('should include body', () => {
+      const metadata = new MetadataGenerator('./fixtures/controllers/parameterController.ts').Generate();
+      const spec = new SpecGenerator2(metadata, getDefaultExtendedOptions()).GetSpec();
+
+      const method = spec.paths['/ParameterTest/ParamaterBodyAnyType'].post?.parameters ?? [];
+
+      expect(method).to.have.lengthOf(1);
+      const queryParam = method[0];
+      expect(queryParam.in).to.equal('body');
+    });
+
+    it('should include header', () => {
+      const metadata = new MetadataGenerator('./fixtures/controllers/parameterController.ts').Generate();
+      const spec = new SpecGenerator2(metadata, getDefaultExtendedOptions()).GetSpec();
+
+      const method = spec.paths['/ParameterTest/ParameterHeaderStringType'].get?.parameters ?? [];
+
+      expect(method).to.have.lengthOf(1);
+      const queryParam = method[0];
+      expect(queryParam.in).to.equal('header');
+    });
+
+    it('should include path', () => {
+      const metadata = new MetadataGenerator('./fixtures/controllers/parameterController.ts').Generate();
+      const spec = new SpecGenerator2(metadata, getDefaultExtendedOptions()).GetSpec();
+
+      const method = spec.paths['/ParameterTest/Path/{test}'].get?.parameters ?? [];
+
+      expect(method).to.have.lengthOf(1);
+      const queryParam = method[0];
+      expect(queryParam.in).to.equal('path');
+    });
+
+    it('should include formData', () => {
+      const metadata = new MetadataGenerator('./fixtures/controllers/parameterController.ts').Generate();
+      const spec = new SpecGenerator2(metadata, getDefaultExtendedOptions()).GetSpec();
+
+      const method = spec.paths['/ParameterTest/FormDataStringType'].get?.parameters ?? [];
+
+      expect(method).to.have.lengthOf(1);
+      const queryParam = method[0];
+      expect(queryParam.in).to.equal('formData');
+    });
+  });
+
+  describe('should exclude @RequestProp', () => {
+    it('should exclude request-prop from method parameters', () => {
+      const metadata = new MetadataGenerator('./fixtures/controllers/parameterController.ts').Generate();
+      const spec = new SpecGenerator2(metadata, getDefaultExtendedOptions()).GetSpec();
+
+      const method = spec.paths['/ParameterTest/RequestProps'].post?.parameters ?? [];
+
+      expect(method).to.have.lengthOf(0);
+
+      method.forEach(p => {
+        expect(p.in).to.not.equal('request-prop');
+      });
     });
   });
 });

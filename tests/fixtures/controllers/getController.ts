@@ -1,25 +1,28 @@
 ///<reference path="../tsoaTestModule.d.ts" />
+import { Controller, Example, Get, OperationId, Queries, Query, Request, Res, Response, Route, SuccessResponse, Tags, TsoaResponse } from '@namecheap/tsoa-runtime';
 import { Readable } from 'stream';
-import { Controller, Example, Get, OperationId, Query, Request, Response, Route, SuccessResponse, Tags, Res, TsoaResponse } from '@namecheap/tsoa-runtime';
+import TsoaTest from 'tsoaTest';
 import '../duplicateTestModel';
 import {
   GenericModel,
   GetterClass,
   GetterInterface,
   GetterInterfaceHerited,
+  IndexedValue,
+  IndexedValueGeneric,
+  IndexedValueReference,
+  IndexedValueTypeReference,
+  ParenthesizedIndexedValue,
+  SimpleClassWithToJSON,
   TestClassModel,
   TestModel,
   TestSubModel,
-  SimpleClassWithToJSON,
-  IndexedValue,
-  IndexedValueReference,
-  ParenthesizedIndexedValue,
-  IndexedValueGeneric,
-  IndexedValueTypeReference,
 } from '../testModel';
 import { ModelService } from './../services/modelService';
-import TsoaTest from 'tsoaTest';
 
+export type BadRequest = TsoaResponse<400, TestModel, { name: 'some_thing' }>;
+export type ForbiddenRequest = TsoaResponse<401, TestModel, { name: 'another some_thing' }>;
+export type BadAndInternalErrorRequest = TsoaResponse<400 | 500, TestModel, { name: 'combine' }>;
 export const PathFromConstant = 'PathFromConstantValue';
 export enum EnumPaths {
   PathFromEnum = 'PathFromEnumValue',
@@ -66,6 +69,7 @@ export class GetTestController extends Controller {
     strLiteralVal: 'Foo',
     stringArray: ['string one', 'string two'],
     stringValue: 'a string',
+    nullableStringLiteral: 'NULLABLE_LIT_1',
     undefineableUnionPrimitiveType: undefined,
     undefinedValue: undefined,
   })
@@ -103,9 +107,25 @@ export class GetTestController extends Controller {
     return {} as GetterInterfaceHerited;
   }
 
+  @Get('InnerInterface')
+  public async getInnerInterface() {
+    interface InnerInterface {
+      value?: string;
+    }
+    return { value: 'test' } as InnerInterface;
+  }
+
   @Get('ModuleRedeclarationAndNamespace')
   public async getModuleRedeclarationAndNamespace(): Promise<TsoaTest.TestModel73> {
     return {} as TsoaTest.TestModel73;
+  }
+
+  @Get('NamespaceWithTypeCastedObject')
+  public async getNamespaceWithTypeCastedObject() {
+    const test = { value: 'test' };
+    return {
+      value: test as TsoaTest.TestModel73,
+    };
   }
 
   @Get('Multi')
@@ -142,6 +162,33 @@ export class GetTestController extends Controller {
     model.numberValue = numberPathParam;
     model.boolValue = booleanPathParam;
     model.stringValue = stringPathParam;
+
+    return model;
+  }
+
+  @Get('AllQueriesInOneObject')
+  public async getAllQueriesInOneObject(@Queries() queryParams: QueryParams) {
+    const model = new ModelService().getModel();
+    model.optionalString = queryParams.optionalStringParam;
+    model.numberValue = queryParams.numberParam;
+    model.boolValue = queryParams.booleanParam;
+    model.stringValue = queryParams.stringParam;
+
+    return model;
+  }
+
+  @Get('WildcardQueries')
+  public async getWildcardQueries(@Queries() queryParams: { [name: string]: any }) {
+    const model = new ModelService().getModel();
+    model.anyType = queryParams;
+
+    return model;
+  }
+
+  @Get('TypedRecordQueries')
+  public async getTypedRecordQueries(@Queries() queryParams: { [name: string]: number }) {
+    const model = new ModelService().getModel();
+    model.anyType = queryParams;
 
     return model;
   }
@@ -252,6 +299,14 @@ export class GetTestController extends Controller {
 
   /**
    * @param res The alternate response
+   */
+  @Get('Res_Alias')
+  public async getResAlias(@Res() res: BadRequest): Promise<void> {
+    res?.(400, new ModelService().getModel(), { name: 'some_thing' });
+  }
+
+  /**
+   * @param res The alternate response
    * @param res Another alternate response
    */
   @Get('MultipleRes')
@@ -266,9 +321,29 @@ export class GetTestController extends Controller {
   /**
    * @param res The alternate response
    */
+  @Get('MultipleRes_Alias')
+  public async multipleResAlias(@Res() res: BadRequest, @Res() anotherRes: ForbiddenRequest): Promise<Result> {
+    res?.(400, new ModelService().getModel(), { name: 'some_thing' });
+    anotherRes?.(401, new ModelService().getModel(), { name: 'another some_thing' });
+    return {
+      value: 'success',
+    };
+  }
+
+  /**
+   * @param res The alternate response
+   */
   @Get('MultipleStatusCodeRes')
   public async multipleStatusCodeRes(@Res() res: TsoaResponse<400 | 500, TestModel, { 'custom-header': string }>, @Query('statusCode') statusCode: 400 | 500): Promise<void> {
     res?.(statusCode, new ModelService().getModel(), { 'custom-header': 'hello' });
+  }
+
+  /**
+   * @param res The alternate response
+   */
+  @Get('MultipleStatusCodeRes_Alias')
+  public async multipleStatusCodeResAlias(@Res() res: BadAndInternalErrorRequest, @Query('statusCode') statusCode: 400 | 500): Promise<void> {
+    res?.(statusCode, new ModelService().getModel(), { name: 'combine' });
   }
 
   @Get(PathFromConstant)
@@ -300,6 +375,11 @@ export class GetTestController extends Controller {
   public async getIndexedValueGeneric(): Promise<IndexedValueGeneric<IndexedValueTypeReference>> {
     return 'FOO';
   }
+
+  @Get('UnionTypeWithDefault')
+  public async getUnionTypeWithDefault(@Query() unionType: 'a' | 'b' | undefined = 'a'): Promise<void> {
+    return;
+  }
 }
 
 export interface ErrorResponse {
@@ -314,4 +394,11 @@ export interface CustomError extends Error {
 
 export interface Result {
   value: 'success' | 'failure';
+}
+
+export interface QueryParams {
+  numberParam: number;
+  stringParam: string;
+  booleanParam: boolean;
+  optionalStringParam?: string;
 }

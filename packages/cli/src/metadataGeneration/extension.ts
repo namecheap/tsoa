@@ -1,5 +1,5 @@
 import * as ts from 'typescript';
-import { getInitializerValue } from './initializer-value';
+import { getInitializerValue, isNonUndefinedInitializerValue } from './initializer-value';
 import { MetadataGenerator } from './metadataGenerator';
 import { Tsoa } from '@namecheap/tsoa-runtime';
 import { safeFromJson } from '../utils/jsonUtils';
@@ -12,20 +12,26 @@ export function getExtensions(decorators: ts.Identifier[], metadataGenerator: Me
 
     const [decoratorKeyArg, decoratorValueArg] = extensionDecorator.parent.arguments;
 
-    if (!ts.isStringLiteral(decoratorKeyArg)) {
+    if (!ts.isStringLiteral(decoratorKeyArg) && !ts.isIdentifier(decoratorKeyArg)) {
       throw new Error('The first argument of @Extension must be a string');
     }
 
-    const attributeKey = decoratorKeyArg.text;
+    const attributeKey = ts.isIdentifier(decoratorKeyArg) ? getInitializerValue(decoratorKeyArg, metadataGenerator.typeChecker) : decoratorKeyArg.text;
+
+    if (typeof attributeKey !== 'string') {
+      throw new Error('The first argument of @Extension must be a string');
+    }
 
     if (!decoratorValueArg) {
       throw new Error(`Extension '${attributeKey}' must contain a value`);
     }
 
-    validateExtensionKey(attributeKey);
+    assertValidExtensionKey(attributeKey);
 
     const attributeValue = getInitializerValue(decoratorValueArg, metadataGenerator.typeChecker);
-
+    if (!isNonUndefinedInitializerValue(attributeValue)) {
+      throw new Error(`Extension '${attributeKey}' cannot have an undefined initializer value`);
+    }
     return { key: attributeKey, value: attributeValue };
   });
 
@@ -39,8 +45,7 @@ export function getExtensionsFromJSDocComments(comments: string[]): Tsoa.Extensi
     if (extensionData) {
       const keys = Object.keys(extensionData);
       keys.forEach(key => {
-        validateExtensionKey(key);
-
+        assertValidExtensionKey(key);
         extensions.push({ key: key, value: extensionData[key] });
       });
     }
@@ -49,8 +54,8 @@ export function getExtensionsFromJSDocComments(comments: string[]): Tsoa.Extensi
   return extensions;
 }
 
-function validateExtensionKey(key: string) {
-  if (key.indexOf('x-') !== 0) {
+function assertValidExtensionKey(key: string): asserts key is `x-${string}` {
+  if (!key.startsWith('x-')) {
     throw new Error('Extensions must begin with "x-" to be valid. Please see the following link for more information: https://swagger.io/docs/specification/openapi-extensions/');
   }
 }

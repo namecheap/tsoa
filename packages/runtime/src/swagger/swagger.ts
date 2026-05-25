@@ -26,7 +26,7 @@ export namespace Swagger {
     parameters?: { [name: string]: Parameter };
     responses?: { [name: string]: Response };
     security?: Security[];
-    securityDefinitions?: { [name: string]: Security };
+    securityDefinitions?: { [name: string]: SecuritySchemes };
   }
 
   export interface Spec3 extends Spec {
@@ -45,7 +45,7 @@ export namespace Swagger {
     requestBodies?: { [name: string]: unknown };
     responses?: { [name: string]: Response };
     schemas?: { [name: string]: Schema3 };
-    securitySchemes?: { [name: string]: Security };
+    securitySchemes?: { [name: string]: SecuritySchemes };
   }
 
   export interface Server {
@@ -228,6 +228,7 @@ export namespace Swagger {
     $ref?: string;
     title?: string;
     description?: string;
+    // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
     default?: string | boolean | number | unknown;
     multipleOf?: number;
     maximum?: number;
@@ -282,6 +283,7 @@ export namespace Swagger {
     format?: string;
     items?: BaseSchema;
     collectionFormat?: 'csv' | 'ssv' | 'tsv' | 'pipes' | 'multi';
+    // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
     default?: string | boolean | number | unknown;
     maximum?: number;
     exclusiveMaximum?: boolean;
@@ -321,6 +323,12 @@ export namespace Swagger {
     description?: string;
   }
 
+  export interface ApiKeySecurity extends BaseSecurity {
+    type: 'apiKey';
+    name: string;
+    in: 'query' | 'header';
+  }
+
   interface BaseOAuthSecurity extends BaseSecurity {
     scopes?: OAuthScope;
   }
@@ -334,10 +342,15 @@ export namespace Swagger {
     type: 'basic';
   }
 
-  export interface ApiKeySecurity extends BaseSecurity {
-    type: 'apiKey';
-    name: string;
-    in: 'query' | 'header';
+  export interface BearerSecurity3 extends BaseSecurity {
+    type: 'http';
+    scheme: 'bearer';
+    bearerFormat?: string;
+  }
+
+  export interface OpenIDSecurity extends BaseSecurity {
+    type: 'openIdConnect';
+    openIdConnectUrl: string;
   }
 
   export interface OAuth2Security3 extends BaseSecurity {
@@ -385,5 +398,18 @@ export namespace Swagger {
     [flowName in OAuth2FlowTypes]?: OAuth2SecurityFlow3;
   };
   export type OAuth2FlowTypes = 'authorizationCode' | 'implicit' | 'password' | 'clientCredentials';
-  export type Security = BasicSecurity | BasicSecurity3 | ApiKeySecurity | OAuth2AccessCodeSecurity | OAuth2ApplicationSecurity | OAuth2ImplicitSecurity | OAuth2PasswordSecurity | OAuth2Security3;
+  export type SecuritySchemes =
+    | ApiKeySecurity
+    | BasicSecurity
+    | BasicSecurity3
+    | BearerSecurity3
+    | OpenIDSecurity
+    | OAuth2AccessCodeSecurity
+    | OAuth2ApplicationSecurity
+    | OAuth2ImplicitSecurity
+    | OAuth2PasswordSecurity
+    | OAuth2Security3;
+  export interface Security {
+    [key: string]: string[];
+  }
 }

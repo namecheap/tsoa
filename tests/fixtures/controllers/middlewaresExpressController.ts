@@ -1,9 +1,9 @@
-import { Route, Get, Middlewares as GenericMiddlewares } from '@namecheap/tsoa-runtime';
+import { Middlewares as GenericMiddlewares, Get, Route } from '@namecheap/tsoa-runtime';
 
-import type { Request as ExpressRequest, Response as ExpressResponse, NextFunction as ExpressNextFunction, RequestHandler } from 'express';
+import type { NextFunction as ExpressNextFunction, Request as ExpressRequest, Response as ExpressResponse, RequestHandler } from 'express';
 
-function Middlewares(...mws: RequestHandler[]) {
-  return GenericMiddlewares<RequestHandler>(...mws);
+function Middlewares(...mws: Array<RequestHandler | (() => Promise<RequestHandler>)>) {
+  return GenericMiddlewares(...mws);
 }
 
 const middlewaresState: Record<string, boolean> = {};
@@ -22,7 +22,7 @@ function testMiddleware(key: string) {
 @GenericMiddlewares<RequestHandler>(testMiddleware('route'))
 @Route('MiddlewareTestExpress')
 export class MiddlewareExpressController {
-  @Middlewares(testMiddleware('test1'))
+  @Middlewares(testMiddleware('test1'), testMiddleware('test2'))
   @Get('/test1')
   public async test1(): Promise<void> {
     return;

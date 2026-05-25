@@ -13,9 +13,11 @@ import { TypeResolver } from './typeResolver';
 import { getHeaderType } from '../utils/headerTypeHelpers';
 import { DecoratorProcessorContext } from './types/nodeDecoratorProcessor';
 
+type HttpMethod = 'options' | 'get' | 'post' | 'put' | 'patch' | 'delete' | 'head';
+
 export class MethodGenerator {
-  private method: 'options' | 'get' | 'post' | 'put' | 'patch' | 'delete' | 'head';
-  private path: string;
+  protected method?: HttpMethod;
+  protected path?: string;
   private produces?: string[];
   private consumes?: string;
 
@@ -31,8 +33,8 @@ export class MethodGenerator {
     this.processMethodDecorators();
   }
 
-  public IsValid() {
-    return !!this.method;
+  public IsValid(): this is { method: HttpMethod; path: string } {
+    return this.method !== undefined && this.path !== undefined;
   }
 
   public Generate(): Tsoa.Method {
@@ -81,19 +83,32 @@ export class MethodGenerator {
   }
 
   private buildParameters() {
+    if (!this.IsValid()) {
+      throw new GenerateMetadataError("This isn't a valid a controller method.");
+    }
+
     const fullPath = path.join(this.parentPath || '', this.path);
+    const method = this.method;
     const parameters = this.node.parameters
       .map(p => {
         try {
-          return new ParameterGenerator(p, this.method, fullPath, this.current).Generate();
+          return new ParameterGenerator(p, method, fullPath, this.current).Generate();
         } catch (e) {
           const methodId = this.node.name as ts.Identifier;
           const controllerId = (this.node.parent as ts.ClassDeclaration).name as ts.Identifier;
-          throw new GenerateMetadataError(`${String(e.message)} \n in '${controllerId.text}.${methodId.text}'`);
+          const message = e instanceof Error ? e.message : String(e);
+          throw new GenerateMetadataError(`${message} \n in '${controllerId.text}.${methodId.text}'`);
         }
       })
       .reduce((flattened, params) => [...flattened, ...params], []);
 
+    this.validateBodyParameters(parameters);
+    this.validateQueryParameters(parameters);
+
+    return parameters;
+  }
+
+  private validateBodyParameters(parameters: Tsoa.Parameter[]) {
     const bodyParameters = parameters.filter(p => p.in === 'body');
     const bodyProps = parameters.filter(p => p.in === 'body-prop');
 
@@ -109,7 +124,18 @@ export class MethodGenerator {
     if (hasBodyParameter && hasFormDataParameters) {
       throw new Error(`@Body or @BodyProp cannot be used with @FormField, @UploadedFile, or @UploadedFiles in '${this.getCurrentLocation()}' method.`);
     }
-    return parameters;
+  }
+
+  private validateQueryParameters(parameters: Tsoa.Parameter[]) {
+    const queryParameters = parameters.filter(p => p.in === 'query');
+    const queriesParameters = parameters.filter(p => p.in === 'queries');
+
+    if (queriesParameters.length > 1) {
+      throw new GenerateMetadataError(`Only one queries parameter allowed in '${this.getCurrentLocation()}' method.`);
+    }
+    if (queriesParameters.length > 0 && queryParameters.length > 0) {
+      throw new GenerateMetadataError(`Choose either during @Query or @Queries in '${this.getCurrentLocation()}' method.`);
+    }
   }
 
   private getExtensions() {
@@ -168,6 +194,7 @@ export class MethodGenerator {
   }
 
   private getMethodResponses(): Tsoa.Response[] {
+    const responseExamplesByName: Record<string, any> = {};
     const decorators = this.getDecoratorsByIdentifier(this.node, 'Response');
     if (!decorators || !decorators.length) {
       return [];
@@ -176,9 +203,13 @@ export class MethodGenerator {
     return decorators.map(decorator => {
       const [name, description, example, produces] = getDecoratorValues(decorator, this.current.typeChecker);
 
+      if (example !== undefined) {
+        responseExamplesByName[name] = responseExamplesByName[name] ? [...responseExamplesByName[name], example] : [example];
+      }
+
       return {
         description: description || '',
-        examples: example === undefined ? undefined : [example],
+        examples: responseExamplesByName[name] || undefined,
         name: name || '200',
         produces: this.getProducesAdapter(produces),
         schema: this.getSchemaFromDecorator(decorator, 0),

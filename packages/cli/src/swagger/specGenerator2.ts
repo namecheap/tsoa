@@ -1,13 +1,20 @@
-import { ExtendedSpecConfig } from '../cli';
+import { merge as mergeAnything } from 'merge-anything';
+import { merge as deepMerge } from 'ts-deepmerge';
 import { Tsoa, assertNever, Swagger } from '@namecheap/tsoa-runtime';
-import { isVoidType } from '../utils/isVoidType';
-import { convertColonPathParams, normalisePath } from './../utils/pathUtils';
-import { DEFAULT_REQUEST_MEDIA_TYPE, DEFAULT_RESPONSE_MEDIA_TYPE, getValue } from './../utils/swaggerUtils';
+
 import { SpecGenerator } from './specGenerator';
+import { ExtendedSpecConfig } from '../cli';
+import { isVoidType } from '../utils/isVoidType';
+import { convertColonPathParams, normalisePath } from '../utils/pathUtils';
+import { DEFAULT_REQUEST_MEDIA_TYPE, DEFAULT_RESPONSE_MEDIA_TYPE, getValue } from '../utils/swaggerUtils';
 import { UnspecifiedObject } from '../utils/unspecifiedObject';
+import { shouldIncludeValidatorInSchema } from '../utils/validatorUtils';
 
 export class SpecGenerator2 extends SpecGenerator {
-  constructor(protected readonly metadata: Tsoa.Metadata, protected readonly config: ExtendedSpecConfig) {
+  constructor(
+    protected readonly metadata: Tsoa.Metadata,
+    protected readonly config: ExtendedSpecConfig,
+  ) {
     super(metadata, config);
   }
 
@@ -24,7 +31,14 @@ export class SpecGenerator2 extends SpecGenerator {
       swagger: '2.0',
     };
 
-    spec.securityDefinitions = this.config.securityDefinitions ? this.config.securityDefinitions : {};
+    const securityDefinitions = this.config.securityDefinitions ? this.config.securityDefinitions : {};
+    const supportedSchemes = ['basic', 'apiKey', 'oauth2'];
+    for (const { type } of Object.values(securityDefinitions)) {
+      if (!supportedSchemes.includes(type)) {
+        throw new Error(`Swagger 2.0 does not support "${type}" security scheme (allowed values: ${supportedSchemes.join(',')})`);
+      }
+    }
+    spec.securityDefinitions = securityDefinitions;
 
     if (this.config.name) {
       spec.info.title = this.config.name;
@@ -54,13 +68,13 @@ export class SpecGenerator2 extends SpecGenerator {
 
     if (this.config.spec) {
       this.config.specMerging = this.config.specMerging || 'immediate';
-      const mergeFuncs: { [key: string]: any } = {
+      const mergeFuncs: { [key: string]: (spec: UnspecifiedObject, merge: UnspecifiedObject) => UnspecifiedObject } = {
         immediate: Object.assign,
-        recursive: require('merge').recursive,
-        deepmerge: (spec: UnspecifiedObject, merge: UnspecifiedObject): UnspecifiedObject => require('deepmerge').all([spec, merge]),
+        recursive: mergeAnything,
+        deepmerge: (spec: UnspecifiedObject, merge: UnspecifiedObject): UnspecifiedObject => deepMerge(spec, merge),
       };
 
-      spec = mergeFuncs[this.config.specMerging](spec, this.config.spec);
+      spec = mergeFuncs[this.config.specMerging](spec as unknown as UnspecifiedObject, this.config.spec as unknown as UnspecifiedObject) as unknown as Swagger.Spec2;
     }
     if (this.config.schemes) {
       spec.schemes = this.config.schemes;
@@ -74,7 +88,7 @@ export class SpecGenerator2 extends SpecGenerator {
     Object.keys(this.metadata.referenceTypeMap).map(typeName => {
       const referenceType = this.metadata.referenceTypeMap[typeName];
       if (referenceType.dataType === 'refObject') {
-        const required = referenceType.properties.filter(p => p.required && !this.hasUndefined(p)).map(p => p.name);
+        const required = referenceType.properties.filter(p => this.isRequiredWithoutDefault(p) && !this.hasUndefined(p)).map(p => p.name);
         definitions[referenceType.refName] = {
           description: referenceType.description,
           properties: this.buildProperties(referenceType.properties),
@@ -102,17 +116,18 @@ export class SpecGenerator2 extends SpecGenerator {
         if (this.config.xEnumVarnames && referenceType.enumVarnames !== undefined && referenceType.enums.length === referenceType.enumVarnames.length) {
           definitions[referenceType.refName]['x-enum-varnames'] = referenceType.enumVarnames;
         }
+        if (referenceType.example) {
+          definitions[referenceType.refName].example = referenceType.example;
+        }
       } else if (referenceType.dataType === 'refAlias') {
         const swaggerType = this.getSwaggerType(referenceType.type);
         const format = referenceType.format as Swagger.DataFormat;
         const validators = Object.keys(referenceType.validators)
-          .filter(key => {
-            return !key.startsWith('is') && key !== 'minDate' && key !== 'maxDate';
-          })
+          .filter(shouldIncludeValidatorInSchema)
           .reduce((acc, key) => {
             return {
               ...acc,
-              [key]: referenceType.validators[key].value,
+              [key]: referenceType.validators[key]!.value,
             };
           }, {});
 
@@ -170,14 +185,24 @@ export class SpecGenerator2 extends SpecGenerator {
     }
 
     if (method.security) {
-      pathMethod.security = method.security as any[];
+      pathMethod.security = method.security;
     }
+
+    const queriesParams: Tsoa.Parameter[] = method.parameters.filter(p => p.in === 'queries');
 
     pathMethod.parameters = method.parameters
       .filter(p => {
-        return !(p.in === 'request' || p.in === 'body-prop' || p.in === 'res');
+        return ['request', 'body-prop', 'res', 'queries', 'request-prop'].indexOf(p.in) === -1;
       })
       .map(p => this.buildParameter(p));
+
+    if (queriesParams.length > 1) {
+      throw new Error('Only one queries parameter allowed per controller method.');
+    }
+
+    if (queriesParams.length === 1) {
+      pathMethod.parameters.push(...this.buildQueriesParameter(queriesParams[0]));
+    }
 
     const bodyPropParameter = this.buildBodyPropParameter(controllerName, method);
     if (bodyPropParameter) {
@@ -212,11 +237,11 @@ export class SpecGenerator2 extends SpecGenerator {
       }
 
       if (res.headers) {
-        const headers = {};
+        const headers: { [name: string]: Swagger.Header } = {};
         if (res.headers.dataType === 'refObject' || res.headers.dataType === 'nestedObjectLiteral') {
           res.headers.properties.forEach((each: Tsoa.Property) => {
             headers[each.name] = {
-              ...this.getSwaggerType(each.type),
+              ...(this.getSwaggerType(each.type) as Swagger.Header),
               description: each.description,
             };
           });
@@ -265,7 +290,7 @@ export class SpecGenerator2 extends SpecGenerator {
         properties[p.name].description = p.description;
         properties[p.name].example = p.example === undefined ? undefined : p.example[0];
 
-        if (p.required) {
+        if (this.isRequiredWithoutDefault(p)) {
           required.push(p.name);
         }
       });
@@ -289,13 +314,22 @@ export class SpecGenerator2 extends SpecGenerator {
     return parameter;
   }
 
+  private buildQueriesParameter(source: Tsoa.Parameter): Swagger.Parameter2[] {
+    if (source.type.dataType === 'refObject' || source.type.dataType === 'nestedObjectLiteral') {
+      const properties = source.type.properties;
+
+      return properties.map(property => this.buildParameter(this.queriesPropertyToQueryParameter(property)));
+    }
+    throw new Error(`Queries '${source.name}' parameter must be an object.`);
+  }
+
   private buildParameter(source: Tsoa.Parameter): Swagger.Parameter2 {
     let parameter = {
       default: source.default,
       description: source.description,
       in: source.in,
       name: source.name,
-      required: source.required,
+      required: this.isRequiredWithoutDefault(source),
     } as Swagger.Parameter2;
     if (source.deprecated) {
       parameter['x-deprecated'] = true;
@@ -327,13 +361,11 @@ export class SpecGenerator2 extends SpecGenerator {
       return parameter;
     }
 
-    const validatorObjs = {};
+    const validatorObjs: Partial<Record<Tsoa.SchemaValidatorKey, unknown>> = {};
     Object.keys(source.validators)
-      .filter(key => {
-        return !key.startsWith('is') && key !== 'minDate' && key !== 'maxDate';
-      })
-      .forEach((key: string) => {
-        validatorObjs[key] = source.validators[key].value;
+      .filter(shouldIncludeValidatorInSchema)
+      .forEach(key => {
+        validatorObjs[key] = source.validators[key]!.value;
       });
 
     if (source.in === 'body' && source.type.dataType === 'array') {
@@ -370,7 +402,7 @@ export class SpecGenerator2 extends SpecGenerator {
     const properties: { [propertyName: string]: Swagger.Schema2 } = {};
 
     source.forEach(property => {
-      const swaggerType = this.getSwaggerType(property.type) as Swagger.Schema2;
+      let swaggerType = this.getSwaggerType(property.type) as Swagger.Schema2;
       const format = property.format as Swagger.DataFormat;
       swaggerType.description = property.description;
       swaggerType.example = property.example;
@@ -379,11 +411,9 @@ export class SpecGenerator2 extends SpecGenerator {
         swaggerType.default = property.default;
 
         Object.keys(property.validators)
-          .filter(key => {
-            return !key.startsWith('is') && key !== 'minDate' && key !== 'maxDate';
-          })
+          .filter(shouldIncludeValidatorInSchema)
           .forEach(key => {
-            swaggerType[key] = property.validators[key].value;
+            swaggerType = { ...swaggerType, [key]: property.validators[key]!.value };
           });
       }
       if (property.deprecated) {
@@ -408,6 +438,7 @@ export class SpecGenerator2 extends SpecGenerator {
     if (typesWithoutUndefined.every(subType => subType.dataType === 'enum')) {
       const mergedEnum: Tsoa.EnumType = { dataType: 'enum', enums: [] };
       typesWithoutUndefined.forEach(t => {
+        /* eslint-disable @typescript-eslint/no-unnecessary-type-assertion */
         mergedEnum.enums = [...mergedEnum.enums, ...(t as Tsoa.EnumType).enums];
       });
       return this.getSwaggerTypeForEnumType(mergedEnum);
@@ -424,6 +455,10 @@ export class SpecGenerator2 extends SpecGenerator {
         swaggerType['x-nullable'] = true;
         return swaggerType;
       }
+    } else if (typesWithoutUndefined.length === 1) {
+      // A type that is optional (T | undefined) — return the underlying type directly.
+      // In Swagger 2, optionality is expressed via the required array, not the type itself.
+      return this.getSwaggerType(typesWithoutUndefined[0]);
     } else if (process.env.NODE_ENV !== 'tsoa_test') {
       // eslint-disable-next-line no-console
       console.warn('Swagger 2.0 does not support union types beyond string literals.\n' + 'If you would like to take advantage of this, please change tsoa.json\'s "specVersion" to 3.');
@@ -457,7 +492,7 @@ export class SpecGenerator2 extends SpecGenerator {
   }
 
   protected getSwaggerTypeForReferenceType(referenceType: Tsoa.ReferenceType): Swagger.BaseSchema {
-    return { $ref: `#/definitions/${referenceType.refName}` };
+    return { $ref: `#/definitions/${encodeURIComponent(referenceType.refName)}` };
   }
 
   private decideEnumType(anEnum: Array<string | number>, nameOfEnum: string): 'string' | 'number' {

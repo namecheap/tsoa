@@ -1,15 +1,16 @@
 import { expect } from 'chai';
 import 'mocha';
 import 'reflect-metadata';
-import * as request from 'supertest';
+import request from 'supertest';
 import { app } from '../fixtures/inversify-dynamic-container/server';
+import type TestAgent from 'supertest/lib/agent';
 
 const basePath = '/v1';
 
 describe('Inversify Express Server Dynamic Container', () => {
   it('can handle get request with no path argument', () => {
     return verifyGetRequest(basePath + '/ManagedTest?tsoa=abc123456', (err, res) => {
-      const model = res.body as string;
+      const model = res.text;
       expect(model).to.equal(basePath + '/ManagedTest');
     });
   });
@@ -18,7 +19,7 @@ describe('Inversify Express Server Dynamic Container', () => {
     return verifyRequest(verifyResponse, request => request.get(path), expectedStatus);
   }
 
-  function verifyRequest(verifyResponse: (err: any, res: request.Response) => any, methodOperation: (request: request.SuperTest<any>) => request.Test, expectedStatus = 200) {
+  function verifyRequest(verifyResponse: (err: any, res: request.Response) => any, methodOperation: (request: TestAgent<request.Test>) => request.Test, expectedStatus = 200) {
     return new Promise<void>((resolve, reject) => {
       methodOperation(request(app))
         .expect(expectedStatus)
@@ -27,10 +28,11 @@ describe('Inversify Express Server Dynamic Container', () => {
           try {
             parsedError = JSON.parse(res.error);
           } catch (err) {
-            parsedError = res.error;
+            parsedError = res?.error;
           }
 
           if (err) {
+            verifyResponse(err, res);
             reject({
               error: err,
               response: parsedError,

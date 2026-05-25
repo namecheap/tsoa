@@ -1,8 +1,17 @@
 import * as ts from 'typescript';
 import { getInitializerValue } from '../metadataGeneration/initializer-value';
 
+function tsHasDecorators(tsNamespace: typeof ts): tsNamespace is typeof ts & {
+  canHaveDecorators(node: ts.Node): node is any;
+  getDecorators(node: ts.Node): readonly ts.Decorator[] | undefined;
+} {
+  return typeof tsNamespace.canHaveDecorators === 'function';
+}
+
 export function getDecorators(node: ts.Node, isMatching: (identifier: ts.Identifier) => boolean) {
-  const decorators = node.decorators;
+  // beginning in ts4.8 node.decorator is undefined, use getDecorators instead.
+  const decorators = tsHasDecorators(ts) && ts.canHaveDecorators(node) ? ts.getDecorators(node) : [];
+
   if (!decorators || !decorators.length) {
     return [];
   }

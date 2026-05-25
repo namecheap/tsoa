@@ -4,7 +4,7 @@ import { hrtime } from 'process';
 
 const specESM = async () => {
   const result = await generateSpecAndRoutes({
-    configuration: 'tsoa.json',
+    configuration: 'tsoa.yaml',
   });
   return result;
 };
@@ -29,6 +29,7 @@ const log = async <T>(label: string, fn: () => Promise<T>) => {
     generateRoutes(
       {
         noImplicitAdditionalProperties: 'silently-remove-extras',
+        bodyCoercion: true,
         basePath: '/v1',
         entryFile: './fixtures/express/server.ts',
         middleware: 'express',

@@ -1,13 +1,15 @@
 #!/usr/bin/env node
-import * as path from 'path';
-import * as ts from 'typescript';
-import * as YAML from 'yamljs';
-import * as yargs from 'yargs';
+import YAML from 'yaml';
+import yargs from 'yargs';
+import { hideBin } from 'yargs/helpers';
 import { Config, RoutesConfig, SpecConfig, Tsoa } from '@namecheap/tsoa-runtime';
 import { MetadataGenerator } from './metadataGeneration/metadataGenerator';
 import { generateRoutes } from './module/generate-routes';
 import { generateSpec } from './module/generate-spec';
 import { fsExists, fsReadFile } from './utils/fs';
+import { AbstractRouteGenerator } from './routeGeneration/routeGenerator';
+import { extname,isAbsolute } from 'node:path';
+import type { CompilerOptions } from 'typescript';
 
 const workingDir: string = process.cwd();
 
@@ -45,31 +47,36 @@ const authorInformation: Promise<
     }
 > = getPackageJsonValue('author', 'unknown');
 
+const isYamlExtension = (extension: string): boolean => extension === '.yaml' || extension === '.yml';
+
+const isJsExtension = (extension: string): boolean => extension === '.js' || extension === '.cjs';
+
 const getConfig = async (configPath = 'tsoa.json'): Promise<Config> => {
   let config: Config;
-  const ext = path.extname(configPath);
+  const ext = extname(configPath);
+  const configFullPath = isAbsolute(configPath) ? configPath : `${workingDir}/${configPath}`
   try {
-    if (ext === '.yaml' || ext === '.yml') {
-      config = YAML.load(configPath);
-    } else if (ext === '.js') {
-      config = await import(`${workingDir}/${configPath}`);
+    if (isYamlExtension(ext)) {
+      const configRaw = await fsReadFile(configFullPath);
+      config = YAML.parse(configRaw.toString('utf8'));
+    } else if (isJsExtension(ext)) {
+      config = await import(configFullPath);
     } else {
-      const configRaw = await fsReadFile(`${workingDir}/${configPath}`);
+      const configRaw = await fsReadFile(configFullPath);
       config = JSON.parse(configRaw.toString('utf8'));
     }
   } catch (err) {
-    if (err.code === 'MODULE_NOT_FOUND') {
+    if (!(err instanceof Error)) {
+      console.error(err);
+      throw Error(`Unhandled error encountered loading '${configPath}': ${String(err)}`);
+    } else if ('code' in err && err.code === 'MODULE_NOT_FOUND') {
       throw Error(`No config file found at '${configPath}'`);
     } else if (err.name === 'SyntaxError') {
-      // eslint-disable-next-line no-console
       console.error(err);
-      const errorType = ext === '.js' ? 'JS' : 'JSON';
-      // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
+      const errorType = isJsExtension(ext) ? 'JS' : 'JSON';
       throw Error(`Invalid ${errorType} syntax in config at '${configPath}': ${err.message}`);
     } else {
-      // eslint-disable-next-line no-console
       console.error(err);
-      // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
       throw Error(`Unhandled error encountered loading '${configPath}': ${err.message}`);
     }
   }
@@ -81,8 +88,8 @@ const resolveConfig = async (config?: string | Config): Promise<Config> => {
   return typeof config === 'object' ? config : getConfig(config);
 };
 
-const validateCompilerOptions = (config?: Record<string, unknown>): ts.CompilerOptions => {
-  return (config || {}) as ts.CompilerOptions;
+const validateCompilerOptions = (config?: Record<string, unknown>): CompilerOptions => {
+  return (config || {}) as CompilerOptions;
 };
 
 export interface ExtendedSpecConfig extends SpecConfig {
@@ -143,6 +150,24 @@ export const validateSpecConfig = async (config: Config): Promise<ExtendedSpecCo
     config.spec.contact.url = config.spec.contact.url || author?.url;
   }
 
+  if (!config.defaultNumberType) {
+    config.defaultNumberType = 'double';
+  }
+
+  if (config.spec.rootSecurity) {
+    if (!Array.isArray(config.spec.rootSecurity)) {
+      throw new Error('spec.rootSecurity must be an array');
+    }
+
+    if (config.spec.rootSecurity) {
+      const ok = config.spec.rootSecurity.every(security => typeof security === 'object' && security !== null && Object.values(security).every(scope => Array.isArray(scope)));
+
+      if (!ok) {
+        throw new Error('spec.rootSecurity must be an array of objects whose keys are security scheme names and values are arrays of scopes');
+      }
+    }
+  }
+
   return {
     ...config.spec,
     noImplicitAdditionalProperties,
@@ -151,11 +176,16 @@ export const validateSpecConfig = async (config: Config): Promise<ExtendedSpecCo
   };
 };
 
+type RouteGeneratorImpl = new (metadata: Tsoa.Metadata, options: ExtendedRoutesConfig) => AbstractRouteGenerator<any>;
+
 export interface ExtendedRoutesConfig extends RoutesConfig {
   entryFile: Config['entryFile'];
   noImplicitAdditionalProperties: Exclude<Config['noImplicitAdditionalProperties'], undefined>;
+  bodyCoercion: Exclude<RoutesConfig['bodyCoercion'], undefined>;
   controllerPathGlobs?: Config['controllerPathGlobs'];
   multerOpts?: Config['multerOpts'];
+  rootSecurity?: Config['spec']['rootSecurity'];
+  routeGenerator?: string | RouteGeneratorImpl;
 }
 
 const validateRoutesConfig = async (config: Config): Promise<ExtendedRoutesConfig> => {
@@ -178,48 +208,52 @@ const validateRoutesConfig = async (config: Config): Promise<ExtendedRoutesConfi
   }
 
   const noImplicitAdditionalProperties = determineNoImplicitAdditionalSetting(config.noImplicitAdditionalProperties);
+
+  const bodyCoercion = config.routes.bodyCoercion ?? true;
+
   config.routes.basePath = config.routes.basePath || '/';
-  config.routes.middleware = config.routes.middleware || 'express';
 
   return {
     ...config.routes,
     entryFile: config.entryFile,
     noImplicitAdditionalProperties,
+    bodyCoercion,
     controllerPathGlobs: config.controllerPathGlobs,
     multerOpts: config.multerOpts,
+    rootSecurity: config.spec.rootSecurity,
   };
 };
 
-const configurationArgs: yargs.Options = {
+const configurationArgs = {
   alias: 'c',
   describe: 'tsoa configuration file; default is tsoa.json in the working directory',
   required: false,
-  type: 'string',
-};
+  string: true,
+} as const;
 
-const hostArgs: yargs.Options = {
+const hostArgs = {
   describe: 'API host',
   required: false,
-  type: 'string',
-};
+  string: true,
+} as const;
 
-const basePathArgs: yargs.Options = {
+const basePathArgs = {
   describe: 'Base API path',
   required: false,
-  type: 'string',
-};
+  string: true,
+} as const;
 
-const yarmlArgs: yargs.Options = {
+const yarmlArgs = {
   describe: 'Swagger spec yaml format',
   required: false,
-  type: 'boolean',
-};
+  boolean: true,
+} as const;
 
-const jsonArgs: yargs.Options = {
+const jsonArgs = {
   describe: 'Swagger spec json format',
   required: false,
-  type: 'boolean',
-};
+  boolean: true,
+} as const;
 
 export interface ConfigArgs {
   basePath?: string;
@@ -232,10 +266,9 @@ export interface SwaggerArgs extends ConfigArgs {
   yaml?: boolean;
 }
 
-export function runCLI(): void {
-  yargs
+export function runCLI() {
+  return yargs(hideBin(process.argv))
     .usage('Usage: $0 <command> [options]')
-    .demand(1)
     .command(
       'spec',
       'Generate OpenAPI spec',
@@ -246,19 +279,7 @@ export function runCLI(): void {
         json: jsonArgs,
         yaml: yarmlArgs,
       },
-      SpecGenerator as any,
-    )
-    .command(
-      'swagger',
-      'Generate OpenAPI spec',
-      {
-        basePath: basePathArgs,
-        configuration: configurationArgs,
-        host: hostArgs,
-        json: jsonArgs,
-        yaml: yarmlArgs,
-      },
-      SpecGenerator as any,
+      args => SpecGenerator(args),
     )
     .command(
       'routes',
@@ -267,7 +288,7 @@ export function runCLI(): void {
         basePath: basePathArgs,
         configuration: configurationArgs,
       },
-      routeGenerator as any,
+      args => routeGenerator(args),
     )
     .command(
       'spec-and-routes',
@@ -279,25 +300,25 @@ export function runCLI(): void {
         json: jsonArgs,
         yaml: yarmlArgs,
       },
-      generateSpecAndRoutes as any,
+      args => void generateSpecAndRoutes(args),
     )
-    .command(
-      'swagger-and-routes',
-      'Generate OpenAPI spec and routes',
-      {
-        basePath: basePathArgs,
-        configuration: configurationArgs,
-        host: hostArgs,
-        json: jsonArgs,
-        yaml: yarmlArgs,
-      },
-      generateSpecAndRoutes as any,
-    )
+    .demandCommand(1, 1, 'Must provide a valid command.')
     .help('help')
-    .alias('help', 'h').argv;
+    .alias('help', 'h')
+    .parse();
 }
 
-if (require.main === module) runCLI();
+if (require.main === module) {
+  void (async () => {
+    try {
+      await runCLI();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('tsoa cli error:\n', err);
+      process.exit(1);
+    }
+  })();
+}
 
 async function SpecGenerator(args: SwaggerArgs) {
   try {
@@ -365,7 +386,7 @@ export async function generateSpecAndRoutes(args: SwaggerArgs, metadata?: Tsoa.M
     const swaggerConfig = await validateSpecConfig(config);
 
     if (!metadata) {
-      metadata = new MetadataGenerator(config.entryFile, compilerOptions, config.ignore, config.controllerPathGlobs).Generate();
+      metadata = new MetadataGenerator(config.entryFile, compilerOptions, config.ignore, config.controllerPathGlobs, config.spec.rootSecurity, config.defaultNumberType, config.routes.esm).Generate();
     }
 
     await Promise.all([generateRoutes(routesConfig, compilerOptions, config.ignore, metadata), generateSpec(swaggerConfig, compilerOptions, config.ignore, metadata)]);
@@ -377,3 +398,11 @@ export async function generateSpecAndRoutes(args: SwaggerArgs, metadata?: Tsoa.M
     throw err;
   }
 }
+export type RouteGeneratorModule<Config extends ExtendedRoutesConfig> = {
+  default: new (
+    metadata: Tsoa.Metadata,
+    routesConfig: Config,
+  ) => {
+    GenerateCustomRoutes: () => Promise<void>;
+  };
+};

@@ -1,24 +1,13 @@
 import { expect } from 'chai';
 import 'mocha';
-import * as request from 'supertest';
+import request from 'supertest';
 import { app } from '../fixtures/express-openapi3/server';
 import { TestModel, ValidateModel } from '../fixtures/testModel';
+import type TestAgent from 'supertest/lib/agent';
 
 const basePath = '/v1';
 
 describe('OpenAPI3 Express Server', () => {
-  it('Should return on @Res', () => {
-    return verifyGetRequest(
-      basePath + '/GetTest/Res',
-      (_err, res) => {
-        const model = res.body as TestModel;
-        expect(model.id).to.equal(1);
-        expect(res.header['custom-header']).to.eq('hello');
-      },
-      400,
-    );
-  });
-
   it('should valid model validate', () => {
     const bodyModel = new ValidateModel();
     bodyModel.floatValue = 1.2;
@@ -93,6 +82,7 @@ describe('OpenAPI3 Express Server', () => {
       wordOrNull: null,
       maybeString: null,
       justNull: null,
+      nestedNullable: { property: null },
     };
 
     return verifyPostRequest(
@@ -155,6 +145,7 @@ describe('OpenAPI3 Express Server', () => {
         expect(body.nullableTypes.wordOrNull).to.equal(bodyModel.nullableTypes.wordOrNull);
         expect(body.nullableTypes.maybeString).to.equal(bodyModel.nullableTypes.maybeString);
         expect(body.nullableTypes.justNull).to.equal(bodyModel.nullableTypes.justNull);
+        expect(body.nullableTypes.nestedNullable.property).to.equal(bodyModel.nullableTypes.nestedNullable.property);
 
         expect(body.fields).to.equal(undefined);
       },
@@ -376,6 +367,82 @@ describe('OpenAPI3 Express Server', () => {
     );
   });
 
+  describe('@Res', () => {
+    it('Should return on @Res', () => {
+      return verifyGetRequest(
+        basePath + '/GetTest/Res',
+        (_err, res) => {
+          const model = res.body as TestModel;
+          expect(model.id).to.equal(1);
+          expect(res.get('custom-header')).to.eq('hello');
+        },
+        400,
+      );
+    });
+
+    it('Should return on @Res with alias', () => {
+      return verifyGetRequest(
+        basePath + '/GetTest/Res_Alias',
+        (_err, res) => {
+          const model = res.body as TestModel;
+          expect(model.id).to.equal(1);
+          expect(res.get('name')).to.equal('some_thing');
+        },
+        400,
+      );
+    });
+
+    [400, 500].forEach(statusCode => {
+      it('Should support multiple status codes with the same @Res structure', () => {
+        return verifyGetRequest(
+          basePath + `/GetTest/MultipleStatusCodeRes?statusCode=${statusCode}`,
+          (_err, res) => {
+            const model = res.body as TestModel;
+            expect(model.id).to.equal(1);
+            expect(res.get('custom-header')).to.eq('hello');
+          },
+          statusCode,
+        );
+      });
+
+      it('Should support multiple status codes with the same @Res structure with alias', () => {
+        return verifyGetRequest(
+          basePath + `/GetTest/MultipleStatusCodeRes_Alias?statusCode=${statusCode}`,
+          (_err, res) => {
+            const model = res.body as TestModel;
+            expect(model.id).to.equal(1);
+            expect(res.get('name')).to.eq('combine');
+          },
+          statusCode,
+        );
+      });
+    });
+
+    it('Should not modify the response after headers sent', () => {
+      return verifyGetRequest(
+        basePath + '/GetTest/MultipleRes',
+        (_err, res) => {
+          const model = res.body as TestModel;
+          expect(model.id).to.equal(1);
+          expect(res.get('custom-header')).to.eq('hello');
+        },
+        400,
+      );
+    });
+
+    it('Should not modify the response after headers sent with alias', () => {
+      return verifyGetRequest(
+        basePath + '/GetTest/MultipleRes_Alias',
+        (_err, res) => {
+          const model = res.body as TestModel;
+          expect(model.id).to.equal(1);
+          expect(res.get('name')).to.eq('some_thing');
+        },
+        400,
+      );
+    });
+  });
+
   function verifyGetRequest(path: string, verifyResponse: (err: any, res: request.Response) => any, expectedStatus?: number) {
     return verifyRequest(verifyResponse, request => request.get(path), expectedStatus);
   }
@@ -384,7 +451,7 @@ describe('OpenAPI3 Express Server', () => {
     return verifyRequest(verifyResponse, request => request.post(path).send(data), expectedStatus);
   }
 
-  function verifyRequest(verifyResponse: (err: any, res: request.Response) => any, methodOperation: (request: request.SuperTest<any>) => request.Test, expectedStatus = 200) {
+  function verifyRequest(verifyResponse: (err: any, res: request.Response) => any, methodOperation: (request: TestAgent<request.Test>) => request.Test, expectedStatus = 200) {
     return new Promise<void>((resolve, reject) => {
       methodOperation(request(app))
         .expect(expectedStatus)
@@ -393,10 +460,11 @@ describe('OpenAPI3 Express Server', () => {
           try {
             parsedError = JSON.parse(res.error);
           } catch (err) {
-            parsedError = res.error;
+            parsedError = res?.error;
           }
 
           if (err) {
+            verifyResponse(err, res);
             reject({
               error: err,
               response: parsedError,

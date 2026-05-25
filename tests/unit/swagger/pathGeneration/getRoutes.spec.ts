@@ -43,7 +43,7 @@ describe('GET route generation', () => {
       throw new Error('No operation parameters.');
     }
 
-    return get.parameters as any;
+    return get.parameters;
   };
 
   it('should generate a path for a GET route with no path argument', () => {
@@ -190,7 +190,29 @@ describe('GET route generation', () => {
     }).to.throw("@Query('myModel') Can't support 'refObject' type. \n in 'InvalidGetTestController.getModelWithComplex'");
   });
 
-  it('should reject invalid header types', () => {
+  it('should reject Query and Queries decorators at the same time', () => {
+    expect(() => {
+      const invalidMetadata = new MetadataGenerator('./fixtures/controllers/invalidQueryController.ts').Generate();
+      new SpecGenerator2(invalidMetadata, getDefaultExtendedOptions()).GetSpec();
+    }).to.throw("Choose either during @Query or @Queries in 'InvalidQueryTestController.getQueryAndQueries' method.");
+  });
+
+  it('should reject multiple Queries decorators', () => {
+    expect(() => {
+      const invalidMetadata = new MetadataGenerator('./fixtures/controllers/invalidQueriesController.ts').Generate();
+      new SpecGenerator2(invalidMetadata, getDefaultExtendedOptions()).GetSpec();
+    }).to.throw("Only one queries parameter allowed in 'InvalidQueriesTestController.getWithMultipleQueriesParams' method.");
+  });
+
+  it('should reject nested Query object inside Queries decorator', () => {
+    expect(() => {
+      const invalidMetadata = new MetadataGenerator('./fixtures/controllers/invalidNestedQueriesController.ts').Generate();
+      new SpecGenerator2(invalidMetadata, getDefaultExtendedOptions()).GetSpec();
+    }).to.throw("@Queries('nestedQueries') nested property 'nestedObject' Can't support 'refObject' type. \n in 'InvalidNestedQueriesController.nestedQueriesMethod'");
+  });
+
+  it('should reject invalid header types', function () {
+    this.timeout(10_000);
     expect(() => {
       new MetadataGenerator('./fixtures/controllers/invalidHeaderController.ts').Generate();
     }).to.throw(/^Unable to parse Header Type 'Header names must be of type string.*/);

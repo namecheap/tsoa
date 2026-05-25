@@ -12,6 +12,11 @@ export interface Location {
   city: string;
 }
 
+export interface Doc {
+  id: number;
+  description: string;
+}
+
 @Route('ExampleTest')
 export class ExampleTestController {
   /**
@@ -53,6 +58,14 @@ export class ExampleTestController {
    */
   @Post('/post_body')
   public async post(@Body() location: Location): Promise<void> {
+    return;
+  }
+
+  /**
+   * @example prop1 "prop1"
+   */
+  @Post('/post_body_prop_single')
+  public async postBodyPropSingle(@BodyProp() prop1: string): Promise<void> {
     return;
   }
 
@@ -138,6 +151,9 @@ export class ExampleTestController {
    *     "errorMessage":"No such city",
    *     "errorCode": 40000
    * }
+   * @example res {
+   *      "session": "asd.f"
+   * }
    * @example res { "errorMessage":"No custom label", "errorCode": 40000 }
    */
   @Get('CustomExampleLabels')
@@ -213,5 +229,29 @@ export class ExampleTestController {
   @Get('ResponseMultiExamplesWithProduces')
   public async responseMultiExamplesWithProduces(): Promise<string> {
     return 'test 1';
+  }
+
+  @Example<Doc>({
+    id: -1,
+    description: 'test doc des',
+  })
+  @Get('ResponseExampleWithMinusOperatorPrefixValue')
+  public async responseExampleWithMinusOperatorPrefixValue(): Promise<Doc> {
+    return {
+      id: -1,
+      description: 'test doc des',
+    };
+  }
+
+  @Example<Doc>({
+    id: +1,
+    description: 'test doc des',
+  })
+  @Get('ResponseExampleWithPlusOperatorPrefixValue')
+  public async responseExampleWithPlusOperatorPrefixValue(): Promise<Doc> {
+    return {
+      id: 1,
+      description: 'test doc des',
+    };
   }
 }

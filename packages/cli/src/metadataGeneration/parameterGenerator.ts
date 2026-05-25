@@ -10,7 +10,12 @@ import { TypeResolver } from './typeResolver';
 import { getHeaderType } from '../utils/headerTypeHelpers';
 
 export class ParameterGenerator {
-  constructor(private readonly parameter: ts.ParameterDeclaration, private readonly method: string, private readonly path: string, private readonly current: MetadataGenerator) {}
+  constructor(
+    private readonly parameter: ts.ParameterDeclaration,
+    private readonly method: string,
+    private readonly path: string,
+    private readonly current: MetadataGenerator,
+  ) {}
 
   public Generate(): Tsoa.Parameter[] {
     const decoratorName = getNodeFirstDecoratorName(this.parameter, identifier => this.supportParameterDecorator(identifier.text));
@@ -18,6 +23,8 @@ export class ParameterGenerator {
     switch (decoratorName) {
       case 'Request':
         return [this.getRequestParameter(this.parameter)];
+      case 'RequestProp':
+        return [this.getRequestPropParameter(this.parameter)];
       case 'Body':
         return [this.getBodyParameter(this.parameter)];
       case 'BodyProp':
@@ -28,6 +35,8 @@ export class ParameterGenerator {
         return [this.getHeaderParameter(this.parameter)];
       case 'Query':
         return this.getQueryParameters(this.parameter);
+      case 'Queries':
+        return [this.getQueriesParameters(this.parameter)];
       case 'Path':
         return [this.getPathParameter(this.parameter)];
       case 'Res':
@@ -57,6 +66,46 @@ export class ParameterGenerator {
     };
   }
 
+  private getRequestPropParameter(parameter: ts.ParameterDeclaration): Tsoa.Parameter {
+    const parameterName = (parameter.name as ts.Identifier).text;
+    const type = this.getValidatedType(parameter);
+
+    const { examples: example, exampleLabels } = this.getParameterExample(parameter, parameterName);
+    return {
+      default: getInitializerValue(parameter.initializer, this.current.typeChecker, type),
+      description: this.getParameterDescription(parameter),
+      example,
+      exampleLabels,
+      in: 'request-prop',
+      name: getNodeFirstDecoratorValue(this.parameter, this.current.typeChecker, ident => ident.text === 'ParameterProp') || parameterName,
+      parameterName,
+      required: !parameter.questionToken && !parameter.initializer,
+      type,
+      validators: getParameterValidators(this.parameter, parameterName),
+      deprecated: this.getParameterDeprecation(parameter),
+    };
+  }
+
+  private extractTsoaResponse(typeNode: ts.TypeNode | undefined): ts.TypeReferenceNode | undefined {
+    if (!typeNode || !ts.isTypeReferenceNode(typeNode)) {
+      return undefined;
+    }
+    if (typeNode.typeName.getText() === 'TsoaResponse') {
+      return typeNode;
+    }
+
+    const symbol = this.current.typeChecker.getTypeAtLocation(typeNode).aliasSymbol;
+    if (!symbol || !symbol.declarations) {
+      return undefined;
+    }
+    const declaration = symbol.declarations[0];
+    if (!ts.isTypeAliasDeclaration(declaration) || !ts.isTypeReferenceNode(declaration.type)) {
+      return undefined;
+    }
+
+    return declaration.type.typeName.getText() === 'TsoaResponse' ? declaration.type : undefined;
+  }
+
   private getResParameters(parameter: ts.ParameterDeclaration): Tsoa.ResParameter[] {
     const parameterName = (parameter.name as ts.Identifier).text;
     const decorator = getNodeFirstDecoratorValue(this.parameter, this.current.typeChecker, ident => ident.text === 'Res') || parameterName;
@@ -64,9 +113,9 @@ export class ParameterGenerator {
       throw new GenerateMetadataError('Could not find Decorator', parameter);
     }
 
-    const typeNode = parameter.type;
+    const typeNode = this.extractTsoaResponse(parameter.type);
 
-    if (!typeNode || !ts.isTypeReferenceNode(typeNode) || typeNode.typeName.getText() !== 'TsoaResponse') {
+    if (!typeNode) {
       throw new GenerateMetadataError('@Res() requires the type to be TsoaResponse<HTTPStatusCode, ResBody>', parameter);
     }
 
@@ -249,6 +298,45 @@ export class ParameterGenerator {
     };
   }
 
+  private getQueriesParameters(parameter: ts.ParameterDeclaration): Tsoa.Parameter {
+    const parameterName = (parameter.name as ts.Identifier).text;
+    const type = this.getValidatedType(parameter);
+
+    if (type.dataType !== 'refObject' && type.dataType !== 'nestedObjectLiteral') {
+      throw new GenerateMetadataError(`@Queries('${parameterName}') only support 'refObject' or 'nestedObjectLiteral' types. If you want only one query parameter, please use the '@Query' decorator.`);
+    }
+
+    for (const property of type.properties) {
+      this.validateQueriesProperties(property, parameterName);
+    }
+
+    const { examples: example, exampleLabels } = this.getParameterExample(parameter, parameterName);
+
+    return {
+      description: this.getParameterDescription(parameter),
+      in: 'queries',
+      name: parameterName,
+      example,
+      exampleLabels,
+      parameterName,
+      required: !parameter.questionToken && !parameter.initializer,
+      type,
+      validators: getParameterValidators(this.parameter, parameterName),
+      deprecated: this.getParameterDeprecation(parameter),
+    };
+  }
+
+  private validateQueriesProperties(property: Tsoa.Property, parentName: string) {
+    if (property.type.dataType === 'array') {
+      const arrayType = property.type;
+      if (!this.supportPathDataType(arrayType.elementType)) {
+        throw new GenerateMetadataError(`@Queries('${parentName}') property '${property.name}' can't support array '${arrayType.elementType.dataType}' type.`);
+      }
+    } else if (!this.supportPathDataType(property.type)) {
+      throw new GenerateMetadataError(`@Queries('${parentName}') nested property '${property.name}' Can't support '${property.type.dataType}' type.`);
+    }
+  }
+
   private getQueryParameters(parameter: ts.ParameterDeclaration): Tsoa.Parameter[] {
     const parameterName = (parameter.name as ts.Identifier).text;
     const type = this.getValidatedType(parameter);
@@ -351,10 +439,10 @@ export class ParameterGenerator {
     const exampleLabels: Array<string | undefined> = [];
     const examples = getJSDocTags(node.parent, tag => {
       const comment = commentToString(tag.comment);
-      const isExample = (tag.tagName.text === 'example' || tag.tagName.escapedText === 'example') && !!tag.comment && comment?.startsWith(parameterName);
-      const hasExampleLabel = (comment?.indexOf('.') || -1) > 0;
+      const isExample = (tag.tagName.text === 'example' || (tag.tagName.escapedText as string) === 'example') && !!tag.comment && comment?.startsWith(parameterName);
 
       if (isExample) {
+        const hasExampleLabel = (comment?.split(' ')[0].indexOf('.') || -1) > 0;
         // custom example label is delimited by first '.' and the rest will all be included as example label
         exampleLabels.push(hasExampleLabel ? comment?.split(' ')[0].split('.').slice(1).join('.') : undefined);
       }
@@ -373,7 +461,8 @@ export class ParameterGenerator {
           exampleLabels,
         };
       } catch (e) {
-        throw new GenerateMetadataError(`JSON format is incorrect: ${String(e.message)}`);
+        const message = e instanceof Error ? e.message : String(e);
+        throw new GenerateMetadataError(`JSON format is incorrect: ${message}`);
       }
     }
   }
@@ -383,10 +472,12 @@ export class ParameterGenerator {
   }
 
   private supportParameterDecorator(decoratorName: string) {
-    return ['header', 'query', 'path', 'body', 'bodyprop', 'request', 'res', 'inject', 'uploadedfile', 'uploadedfiles', 'formfield'].some(d => d === decoratorName.toLocaleLowerCase());
+    return ['header', 'query', 'queries', 'path', 'body', 'bodyprop', 'request', 'requestprop', 'res', 'inject', 'uploadedfile', 'uploadedfiles', 'formfield'].some(
+      d => d === decoratorName.toLocaleLowerCase(),
+    );
   }
 
-  private supportPathDataType(parameterType: Tsoa.Type) {
+  private supportPathDataType(parameterType: Tsoa.Type): boolean {
     const supportedPathDataTypes: Tsoa.TypeStringLiteral[] = ['string', 'integer', 'long', 'float', 'double', 'date', 'datetime', 'buffer', 'boolean', 'enum', 'refEnum', 'file', 'any'];
     if (supportedPathDataTypes.find(t => t === parameterType.dataType)) {
       return true;
@@ -397,7 +488,8 @@ export class ParameterGenerator {
     }
 
     if (parameterType.dataType === 'union') {
-      return !parameterType.types.map(t => this.supportPathDataType(t)).some(t => t === false);
+      // skip undefined inside unions
+      return !parameterType.types.map(t => t.dataType === 'undefined' || this.supportPathDataType(t)).some(t => t === false);
     }
 
     return false;

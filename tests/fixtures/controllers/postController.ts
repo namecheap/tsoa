@@ -1,4 +1,4 @@
-import { Body, Patch, Post, Query, Route, File, UploadedFile, UploadedFiles, FormField } from '@namecheap/tsoa-runtime';
+import { Body, Deprecated, File, FormField, Patch, Post, Query, Route, UploadedFile, UploadedFiles } from '@namecheap/tsoa-runtime';
 import { ModelService } from '../services/modelService';
 import { GenericRequest, TestClassModel, TestModel } from '../testModel';
 
@@ -67,6 +67,25 @@ export class PostTestController {
     return files;
   }
 
+  @Post('ManyFilesInDifferentFields')
+  public async postWithDifferentFields(@UploadedFile('file_a') fileA: File, @UploadedFile('file_b') fileB: File): Promise<File[]> {
+    return [fileA, fileB];
+  }
+
+  @Post('ManyFilesInDifferentArrayFields')
+  public async postWithDifferentArrayFields(@UploadedFiles('files_a') filesA: File[], @UploadedFile('file_b') fileB: File, @UploadedFiles('files_c') filesC: File[]): Promise<File[][]> {
+    return [filesA, [fileB], filesC];
+  }
+
+  @Post('MixedFormDataWithFilesContainsOptionalFile')
+  public async mixedFormDataWithFile(
+    @FormField('username') username: string,
+    @UploadedFile('avatar') avatar: File,
+    @UploadedFile('optionalAvatar') optionalAvatar?: File,
+  ): Promise<{ username: string; avatar: File; optionalAvatar?: File }> {
+    return { username, avatar, optionalAvatar };
+  }
+
   /**
    *
    * @param aFile File description of multipart
@@ -76,6 +95,11 @@ export class PostTestController {
   @Post('DescriptionOfFileAndFormFields')
   public async postWithFileAndParams(@UploadedFile('file') aFile: File, @FormField('a') a: string, @FormField('c') c: string): Promise<File> {
     return aFile;
+  }
+
+  @Post('DeprecatedFormField')
+  public async postWithDeprecatedParam(@FormField('a') a: string, @FormField('dontUse') @Deprecated() dontUse?: string): Promise<TestModel> {
+    return new ModelService().getModel();
   }
 
   @Post('Location')

@@ -1,8 +1,8 @@
 /* eslint-disable no-console */
-import * as os from 'os';
-import chalk from 'chalk';
+import { dim, green } from 'chalk';
 import { generateSpecAndRoutes, generateRoutes } from '@namecheap/tsoa-cli';
 import { Timer } from './utils/timer';
+import { tmpdir } from 'node:os';
 
 const spec = async () => {
   const result = await generateSpecAndRoutes({
@@ -12,11 +12,11 @@ const spec = async () => {
 };
 
 const log = async <T>(label: string, fn: () => Promise<T>) => {
-  console.log(chalk.dim(chalk.green(`↻ Starting ${label}...`)));
+  console.log(dim(green(`↻ Starting ${label}...`)));
   const timer = new Timer();
 
   const result = await fn();
-  console.log(chalk.green(`✓ Finished ${label} in ${timer.elapsed()}ms`));
+  console.log(green(`✓ Finished ${label} in ${timer.elapsed()}ms`));
 
   return result;
 };
@@ -29,6 +29,7 @@ const log = async <T>(label: string, fn: () => Promise<T>) => {
       generateRoutes(
         {
           noImplicitAdditionalProperties: 'silently-remove-extras',
+          bodyCoercion: true,
           authenticationModule: './fixtures/express/authentication.ts',
           basePath: '/v1',
           entryFile: './fixtures/express/server.ts',
@@ -44,6 +45,7 @@ const log = async <T>(label: string, fn: () => Promise<T>) => {
       generateRoutes(
         {
           noImplicitAdditionalProperties: 'silently-remove-extras',
+          bodyCoercion: true,
           authenticationModule: './fixtures/express-router/authentication.ts',
           entryFile: './fixtures/express-router/server.ts',
           middleware: 'express',
@@ -54,10 +56,27 @@ const log = async <T>(label: string, fn: () => Promise<T>) => {
         metadata,
       ),
     ),
+    log('Express Router Route Generation With custom multer instance', () =>
+      generateRoutes(
+        {
+          noImplicitAdditionalProperties: 'silently-remove-extras',
+          bodyCoercion: true,
+          authenticationModule: './fixtures/express-router-with-custom-multer/authentication.ts',
+          entryFile: './fixtures/express-router-with-custom-multer/server.ts',
+          middleware: 'express',
+          routesDir: './fixtures/express-router-with-custom-multer',
+        },
+        undefined,
+        undefined,
+        metadata,
+      ),
+    ),
+
     log('Express Route Generation, OpenAPI3, noImplicitAdditionalProperties', () =>
       generateRoutes(
         {
           noImplicitAdditionalProperties: 'throw-on-extras',
+          bodyCoercion: true,
           authenticationModule: './fixtures/express-openapi3/authentication.ts',
           basePath: '/v1',
           entryFile: './fixtures/server.ts',
@@ -73,6 +92,7 @@ const log = async <T>(label: string, fn: () => Promise<T>) => {
       generateRoutes(
         {
           noImplicitAdditionalProperties: 'silently-remove-extras',
+          bodyCoercion: true,
           authenticationModule: './fixtures/express/authentication.ts',
           basePath: '/v1',
           controllerPathGlobs: ['./fixtures/controllers/*'],
@@ -85,9 +105,22 @@ const log = async <T>(label: string, fn: () => Promise<T>) => {
         metadata,
       ),
     ),
+    log('Express Route Generation, rootSecurity', () =>
+      generateRoutes({
+        noImplicitAdditionalProperties: 'silently-remove-extras',
+        bodyCoercion: true,
+        authenticationModule: './fixtures/express/authentication.ts',
+        basePath: '/v1',
+        entryFile: './fixtures/express-root-security/server.ts',
+        middleware: 'express',
+        routesDir: './fixtures/express-root-security',
+        rootSecurity: [{ api_key: [] }],
+      }),
+    ),
     log('Koa Route Generation', () =>
       generateRoutes({
         noImplicitAdditionalProperties: 'silently-remove-extras',
+        bodyCoercion: true,
         authenticationModule: './fixtures/koa/authentication.ts',
         basePath: '/v1',
         entryFile: './fixtures/koa/server.ts',
@@ -99,18 +132,20 @@ const log = async <T>(label: string, fn: () => Promise<T>) => {
     log('Koa Route Generation (with multerOpts)', () =>
       generateRoutes({
         noImplicitAdditionalProperties: 'silently-remove-extras',
+        bodyCoercion: true,
         basePath: '/v1',
         entryFile: './fixtures/koa-multer-options/server.ts',
         middleware: 'koa',
         routesDir: './fixtures/koa-multer-options',
         multerOpts: {
-          dest: os.tmpdir(),
+          dest: tmpdir(),
         },
       }),
     ),
     log('Koa Route Generation (but noImplicitAdditionalProperties is set to "throw-on-extras")', () =>
       generateRoutes({
         noImplicitAdditionalProperties: 'throw-on-extras',
+        bodyCoercion: true,
         authenticationModule: './fixtures/koaNoAdditional/authentication.ts',
         basePath: '/v1',
         entryFile: './fixtures/koaNoAdditional/server.ts',
@@ -121,6 +156,7 @@ const log = async <T>(label: string, fn: () => Promise<T>) => {
     log('Hapi Route Generation', () =>
       generateRoutes({
         noImplicitAdditionalProperties: 'silently-remove-extras',
+        bodyCoercion: true,
         authenticationModule: './fixtures/hapi/authentication.ts',
         basePath: '/v1',
         entryFile: './fixtures/hapi/server.ts',
@@ -132,6 +168,7 @@ const log = async <T>(label: string, fn: () => Promise<T>) => {
       generateRoutes(
         {
           noImplicitAdditionalProperties: 'silently-remove-extras',
+          bodyCoercion: true,
           authenticationModule: './fixtures/custom/authentication.ts',
           basePath: '/v1',
           entryFile: './fixtures/custom/server.ts',
@@ -148,6 +185,7 @@ const log = async <T>(label: string, fn: () => Promise<T>) => {
     log('Inversify Route Generation', () =>
       generateRoutes({
         noImplicitAdditionalProperties: 'silently-remove-extras',
+        bodyCoercion: true,
         authenticationModule: './fixtures/inversify/authentication.ts',
         basePath: '/v1',
         entryFile: './fixtures/inversify/server.ts',
@@ -160,6 +198,7 @@ const log = async <T>(label: string, fn: () => Promise<T>) => {
       generateRoutes({
         controllerPathGlobs: ['fixtures/inversify-cpg/*Controller.ts'],
         noImplicitAdditionalProperties: 'silently-remove-extras',
+        bodyCoercion: true,
         authenticationModule: './fixtures/inversify-cpg/authentication.ts',
         basePath: '/v1',
         entryFile: '',
@@ -171,6 +210,7 @@ const log = async <T>(label: string, fn: () => Promise<T>) => {
     log('Inversify Route Generation using dynamic container creation', () =>
       generateRoutes({
         noImplicitAdditionalProperties: 'silently-remove-extras',
+        bodyCoercion: true,
         authenticationModule: './fixtures/inversify-dynamic-container/authentication.ts',
         basePath: '/v1',
         entryFile: './fixtures/inversify-dynamic-container/server.ts',
@@ -182,11 +222,25 @@ const log = async <T>(label: string, fn: () => Promise<T>) => {
     log('Inversify Async IoC Route Generation', () =>
       generateRoutes({
         noImplicitAdditionalProperties: 'silently-remove-extras',
+        bodyCoercion: true,
         basePath: '/v1',
         entryFile: './fixtures/inversify-async/server.ts',
         iocModule: './fixtures/inversify-async/ioc.ts',
         middleware: 'express',
         routesDir: './fixtures/inversify-async',
+      }),
+    ),
+    log('Serverless Route Generation', () =>
+      generateRoutes({
+        noImplicitAdditionalProperties: 'silently-remove-extras',
+        bodyCoercion: true,
+        basePath: '/v1',
+        entryFile: './fixtures/custom/server.ts',
+        routesDir: './fixtures/custom/custom-route-generator/routes',
+        routeGenerator: './fixtures/custom/custom-route-generator/serverlessRouteGenerator',
+        modelsTemplate: './fixtures/custom/custom-route-generator/templates/models.hbs',
+        handlerTemplate: './fixtures/custom/custom-route-generator/templates/handler.hbs',
+        stackTemplate: './fixtures/custom/custom-route-generator/templates/api-stack.hbs',
       }),
     ),
   ]);

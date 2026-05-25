@@ -1,9 +1,9 @@
-import { Route, Get, Middlewares as GenericMiddlewares, Controller } from '@namecheap/tsoa-runtime';
+import { Controller, Middlewares as GenericMiddlewares, Get, Route } from '@namecheap/tsoa-runtime';
 
-import type { Request, Response, NextFunction, RequestHandler } from 'express';
+import type { NextFunction, Request, RequestHandler, Response } from 'express';
 
-function Middlewares(...mws: RequestHandler[]) {
-  return GenericMiddlewares<RequestHandler>(...mws);
+function Middlewares(...mws: Array<RequestHandler | (() => Promise<RequestHandler>)>) {
+  return GenericMiddlewares(...mws);
 }
 
 const middlewaresState: string[] = [];
@@ -33,7 +33,7 @@ class NoopController extends IntermediateController {}
 @GenericMiddlewares<RequestHandler>(testMiddleware('route'))
 @Route('MiddlewareHierarchyTestExpress')
 export class MiddlewareHierarchyTestExpress extends NoopController {
-  @Middlewares(testMiddleware('test1'))
+  @Middlewares(testMiddleware('test1'), testMiddleware('test2'))
   @Get('/test1')
   public async test1(): Promise<void> {
     return;

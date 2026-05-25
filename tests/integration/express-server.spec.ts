@@ -1,9 +1,13 @@
-import { expect } from 'chai';
-import 'mocha';
-import * as request from 'supertest';
-import { base64image } from '../fixtures/base64image';
-import { app } from '../fixtures/express/server';
 import { File } from '@namecheap/tsoa-runtime';
+import { expect } from 'chai';
+import { readFileSync } from 'fs';
+import 'mocha';
+import { resolve } from 'path';
+import request from 'supertest';
+import { base64image } from '../fixtures/base64image';
+import { stateOf } from '../fixtures/controllers/middlewaresExpressController';
+import { state } from '../fixtures/controllers/middlewaresHierarchyController';
+import { app } from '../fixtures/express/server';
 import {
   Gender,
   GenericModel,
@@ -16,10 +20,7 @@ import {
   ValidateMapStringToNumber,
   ValidateModel,
 } from '../fixtures/testModel';
-import { stateOf } from '../fixtures/controllers/middlewaresExpressController';
-import { state } from '../fixtures/controllers/middlewaresHierarchyController';
-import { readFileSync } from 'fs';
-import { resolve } from 'path';
+import type TestAgent from 'supertest/lib/agent';
 
 const basePath = '/v1';
 
@@ -131,42 +132,142 @@ describe('Express Server', () => {
     });
   });
 
-  it('Should return on @Res', () => {
+  it('parses queries parameters in one single object', () => {
+    const numberValue = 10;
+    const boolValue = true;
+    const stringValue = 'the-string';
+
+    return verifyGetRequest(basePath + `/GetTest/AllQueriesInOneObject?booleanParam=${boolValue.toString()}&stringParam=${stringValue}&numberParam=${numberValue}`, (_err, res) => {
+      const queryParams = res.body as TestModel;
+
+      expect(queryParams.numberValue).to.equal(numberValue);
+      expect(queryParams.boolValue).to.equal(boolValue);
+      expect(queryParams.stringValue).to.equal(stringValue);
+      expect(queryParams.optionalString).to.be.undefined;
+    });
+  });
+
+  it('accepts any parameter using a wildcard', () => {
+    const object = {
+      foo: 'foo',
+      bar: 10,
+      baz: true,
+    };
+
+    return verifyGetRequest(basePath + `/GetTest/WildcardQueries?foo=${object.foo}&bar=${object.bar}&baz=${String(object.baz)}`, (_err, res) => {
+      const queryParams = res.body as TestModel;
+
+      expect(queryParams.anyType.foo).to.equal(object.foo);
+      expect(queryParams.anyType.bar).to.equal(String(object.bar));
+      expect(queryParams.anyType.baz).to.equal(String(object.baz));
+    });
+  });
+
+  it('should reject incompatible entries for typed wildcard', () => {
+    const object = {
+      foo: '2',
+      bar: 10,
+      baz: true,
+    };
+
     return verifyGetRequest(
-      basePath + '/GetTest/Res',
-      (_err, res) => {
-        const model = res.body as TestModel;
-        expect(model.id).to.equal(1);
-        expect(res.get('custom-header')).to.eq('hello');
+      basePath + `/GetTest/TypedRecordQueries?foo=${object.foo}&bar=${object.bar}&baz=${String(object.baz)}`,
+      (err, _res) => {
+        const body = JSON.parse(err.text);
+        expect(body.fields['queryParams.baz'].message).to.equal('invalid float number');
       },
       400,
     );
   });
 
-  [400, 500].forEach(statusCode =>
-    it('Should support multiple status codes with the same @Res structure', () => {
+  it('accepts numbered parameters using a wildcard', () => {
+    const object = {
+      foo: '3',
+      bar: 10,
+    };
+
+    return verifyGetRequest(basePath + `/GetTest/TypedRecordQueries?foo=${object.foo}&bar=${object.bar}`, (_err, res) => {
+      const queryParams = res.body as TestModel;
+
+      expect(queryParams.anyType.foo).to.equal(Number(object.foo));
+      expect(queryParams.anyType.bar).to.equal(object.bar);
+    });
+  });
+
+  describe('@Res', () => {
+    it('Should return on @Res', () => {
       return verifyGetRequest(
-        basePath + `/GetTest/MultipleStatusCodeRes?statusCode=${statusCode}`,
+        basePath + '/GetTest/Res',
         (_err, res) => {
           const model = res.body as TestModel;
           expect(model.id).to.equal(1);
           expect(res.get('custom-header')).to.eq('hello');
         },
-        statusCode,
+        400,
       );
-    }),
-  );
+    });
 
-  it('Should not modify the response after headers sent', () => {
-    return verifyGetRequest(
-      basePath + '/GetTest/MultipleRes',
-      (_err, res) => {
-        const model = res.body as TestModel;
-        expect(model.id).to.equal(1);
-        expect(res.get('custom-header')).to.eq('hello');
-      },
-      400,
-    );
+    it('Should return on @Res with alias', () => {
+      return verifyGetRequest(
+        basePath + '/GetTest/Res_Alias',
+        (_err, res) => {
+          const model = res.body as TestModel;
+          expect(model.id).to.equal(1);
+          expect(res.get('name')).to.equal('some_thing');
+        },
+        400,
+      );
+    });
+
+    [400, 500].forEach(statusCode => {
+      it('Should support multiple status codes with the same @Res structure', () => {
+        return verifyGetRequest(
+          basePath + `/GetTest/MultipleStatusCodeRes?statusCode=${statusCode}`,
+          (_err, res) => {
+            const model = res.body as TestModel;
+            expect(model.id).to.equal(1);
+            expect(res.get('custom-header')).to.eq('hello');
+          },
+          statusCode,
+        );
+      });
+
+      it('Should support multiple status codes with the same @Res structure with alias', () => {
+        return verifyGetRequest(
+          basePath + `/GetTest/MultipleStatusCodeRes_Alias?statusCode=${statusCode}`,
+          (_err, res) => {
+            const model = res.body as TestModel;
+            expect(model.id).to.equal(1);
+            expect(res.get('name')).to.eq('combine');
+          },
+          statusCode,
+        );
+      });
+    });
+
+    it('Should not modify the response after headers sent', () => {
+      return verifyGetRequest(
+        basePath + '/GetTest/MultipleRes',
+        (_err, res) => {
+          const model = res.body as TestModel;
+          expect(model.id).to.equal(1);
+          expect(res.get('custom-header')).to.eq('hello');
+        },
+        400,
+      );
+    });
+
+    it('Should not modify the response after headers sent with alias', () => {
+      return verifyGetRequest(
+        basePath + '/GetTest/MultipleRes_Alias',
+        (_err, res) => {
+          const model = res.body as TestModel;
+          expect(model.id).to.equal(1);
+          expect(res.get('name')).to.eq('some_thing');
+        },
+        400,
+      );
+    });
   });
 
   it('parses buffer parameter', () => {
@@ -372,6 +473,7 @@ describe('Express Server', () => {
       (_err, _res) => {
         expect(stateOf('route')).to.be.true;
         expect(stateOf('test1')).to.be.true;
+        expect(stateOf('test2')).to.be.true;
       },
       204,
     );
@@ -382,7 +484,7 @@ describe('Express Server', () => {
     return verifyGetRequest(
       basePath + '/MiddlewareHierarchyTestExpress/test1',
       (_err, _res) => {
-        const expected = ['base', 'intermediate', 'route', 'test1'];
+        const expected = ['base', 'intermediate', 'route', 'test1', 'test2'];
         expect(state()).to.eql(expected);
       },
       204,
@@ -655,7 +757,7 @@ describe('Express Server', () => {
         basePath + `/Validate/parameter/boolean?boolValue=${value}`,
         (err, _res) => {
           const body = JSON.parse(err.text);
-          expect(body.fields.boolValue.message).to.equal('invalid boolean value');
+          expect(body.fields.boolValue.message).to.equal('boolValue');
           expect(body.fields.boolValue.value).to.equal(value);
         },
         400,
@@ -766,6 +868,7 @@ describe('Express Server', () => {
         wordOrNull: null,
         maybeString: null,
         justNull: null,
+        nestedNullable: { property: null },
       };
 
       return verifyPostRequest(
@@ -828,6 +931,7 @@ describe('Express Server', () => {
           expect(body.nullableTypes.wordOrNull).to.equal(bodyModel.nullableTypes.wordOrNull);
           expect(body.nullableTypes.maybeString).to.equal(bodyModel.nullableTypes.maybeString);
           expect(body.nullableTypes.justNull).to.equal(bodyModel.nullableTypes.justNull);
+          expect(body.nullableTypes.nestedNullable.property).to.equal(bodyModel.nullableTypes.nestedNullable.property);
         },
         200,
       );
@@ -1116,6 +1220,22 @@ describe('Express Server', () => {
         });
       });
 
+      it('returns response with header set in authentication middleware', () => {
+        return verifyGetRequest(basePath + '/SecurityTest?access_token=def123456', (_err, res) => {
+          expect(res.headers['some-header']).to.equal('someValueFromAuthenticationMiddleware');
+        });
+      });
+
+      it('returns custom response set in authentication middleware', () => {
+        return verifyGetRequest(
+          basePath + '/SecurityTest?access_token=ghi123456',
+          (_err, res) => {
+            expect(res.text).to.equal('some custom response');
+          },
+          401,
+        );
+      });
+
       it('returns 401 for an invalid key', () => {
         return verifyGetRequest(basePath + '/SecurityTest?access_token=invalid', emptyHandler, 401);
       });
@@ -1176,6 +1296,19 @@ describe('Express Server', () => {
       });
     });
 
+    it('parses queries parameters', () => {
+      return verifyGetRequest(basePath + '/ParameterTest/Queries?firstname=Tony&lastname=Stark&age=45&weight=82.1&human=true&gender=MALE&nicknames=Ironman&nicknames=Iron Man', (_err, res) => {
+        const model = res.body as ParameterTestModel;
+        expect(model.firstname).to.equal('Tony');
+        expect(model.lastname).to.equal('Stark');
+        expect(model.age).to.equal(45);
+        expect(model.weight).to.equal(82.1);
+        expect(model.human).to.equal(true);
+        expect(model.gender).to.equal('MALE');
+        expect(model.nicknames).to.deep.equal(['Ironman', 'Iron Man']);
+      });
+    });
+
     it('parses path parameters', () => {
       return verifyGetRequest(basePath + '/ParameterTest/Path/Tony/Stark/45/82.1/true/MALE', (_err, res) => {
         const model = res.body as ParameterTestModel;
@@ -1201,12 +1334,12 @@ describe('Express Server', () => {
         },
         request => {
           return request.get(basePath + '/ParameterTest/Header').set({
-            age: 45,
+            age: '45',
             firstname: 'Tony',
             gender: 'MALE',
-            human: true,
+            human: 'true',
             last_name: 'Stark',
-            weight: 82.1,
+            weight: '82.1',
           });
         },
         200,
@@ -1229,8 +1362,8 @@ describe('Express Server', () => {
           return request.get(basePath + '/ParameterTest/Header').set({
             age: 'asdf',
             gender: 'male',
-            human: 123,
-            last_name: 123,
+            human: '123',
+            last_name: '123',
             weight: 'hello',
           });
         },
@@ -1246,6 +1379,26 @@ describe('Express Server', () => {
         expect(model.age).to.equal(45);
         expect(model.human).to.equal(true);
         expect(model.gender).to.equal('MALE');
+      });
+    });
+
+    it('parse request filed parameters', () => {
+      const data: ParameterTestModel = {
+        age: 26,
+        firstname: 'Nick',
+        lastname: 'Yang',
+        gender: Gender.MALE,
+        human: true,
+        weight: 50,
+      };
+      return verifyPostRequest(`${basePath}/ParameterTest/RequestProps`, data, (_err, res) => {
+        const model = res.body as ParameterTestModel;
+        expect(model.age).to.equal(26);
+        expect(model.firstname).to.equal('Nick');
+        expect(model.lastname).to.equal('Yang');
+        expect(model.gender).to.equal(Gender.MALE);
+        expect(model.weight).to.equal(50);
+        expect(model.human).to.equal(true);
       });
     });
 
@@ -1361,7 +1514,7 @@ describe('Express Server', () => {
       const mainResourceId = 'main-123';
 
       return verifyGetRequest(basePath + `/SubResourceTest/${mainResourceId}/SubResource`, (_err, res) => {
-        expect(res.body).to.equal(mainResourceId);
+        expect(res.text).to.equal(mainResourceId);
       });
     });
 
@@ -1370,7 +1523,7 @@ describe('Express Server', () => {
       const subResourceId = 'sub-456';
 
       return verifyGetRequest(basePath + `/SubResourceTest/${mainResourceId}/SubResource/${subResourceId}`, (_err, res) => {
-        expect(res.body).to.equal(`${mainResourceId}:${subResourceId}`);
+        expect(res.text).to.equal(`${mainResourceId}:${subResourceId}`);
       });
     });
   });
@@ -1400,12 +1553,26 @@ describe('Express Server', () => {
 
     it('cannot post a file with wrong attribute name', async () => {
       const formData = { wrongAttributeName: '@../package.json' };
-      try {
-        await verifyFileUploadRequest(basePath + '/PostTest/File', formData);
-      } catch (e: any) {
-        expect(e.response.status).to.equal(500);
-        expect(e.response.text).to.equal('{"message":"Unexpected field","name":"MulterError","status":500}');
-      }
+      verifyFileUploadRequest(basePath + '/PostTest/File', formData, (_err, res) => {
+        expect(res.status).to.equal(500);
+        expect(res.text).to.equal('{"message":"Unexpected field","name":"MulterError","status":500}');
+      });
+    });
+
+    it('cannot post a file with no file', async () => {
+      const formData = { notAFileAttribute: 'not a file' };
+      verifyFileUploadRequest(basePath + '/PostTest/File', formData, (_err, res) => {
+        expect(res.status).to.equal(400);
+        expect(res.text).to.equal('{"fields":{"someFile":{"message":"\'someFile\' is required"}},"message":"An error occurred during the request.","name":"ValidateError","status":400}');
+      });
+    });
+
+    it('can post a file with no file', async () => {
+      const formData = { notAFileAttribute: 'not a file' };
+      verifyFileUploadRequest(basePath + '/PostTest/FileOptional', formData, (_err, res) => {
+        expect(res.status).to.equal(200);
+        expect(res.text).to.equal('no file');
+      });
     });
 
     it('can post multiple files with other form fields', () => {
@@ -1417,6 +1584,101 @@ describe('Express Server', () => {
 
       return verifyFileUploadRequest(basePath + '/PostTest/ManyFilesAndFormFields', formData, (_err, res) => {
         for (const file of res.body as File[]) {
+          const packageJsonBuffer = readFileSync(resolve(__dirname, `../${file.originalname}`));
+          const returnedBuffer = Buffer.from(file.buffer);
+          expect(file).to.not.be.undefined;
+          expect(file.fieldname).to.be.not.undefined;
+          expect(file.originalname).to.be.not.undefined;
+          expect(file.encoding).to.be.not.undefined;
+          expect(file.mimetype).to.equal('application/json');
+          expect(Buffer.compare(returnedBuffer, packageJsonBuffer)).to.equal(0);
+        }
+      });
+    });
+
+    it('can post single file to multi file field', () => {
+      const formData = {
+        a: 'b',
+        c: 'd',
+        someFiles: ['@../package.json'],
+      };
+
+      return verifyFileUploadRequest(basePath + '/PostTest/ManyFilesAndFormFields', formData, (_err, res) => {
+        expect(res.body).to.be.length(1);
+      });
+    });
+
+    it('can post multiple files with different field', () => {
+      const formData = {
+        file_a: '@../package.json',
+        file_b: '@../tsconfig.json',
+      };
+      return verifyFileUploadRequest(`${basePath}/PostTest/ManyFilesInDifferentFields`, formData, (_err, res) => {
+        for (const file of res.body as File[]) {
+          const packageJsonBuffer = readFileSync(resolve(__dirname, `../${file.originalname}`));
+          const returnedBuffer = Buffer.from(file.buffer);
+          expect(file).to.not.be.undefined;
+          expect(file.fieldname).to.be.not.undefined;
+          expect(file.originalname).to.be.not.undefined;
+          expect(file.encoding).to.be.not.undefined;
+          expect(file.mimetype).to.equal('application/json');
+          expect(Buffer.compare(returnedBuffer, packageJsonBuffer)).to.equal(0);
+        }
+      });
+    });
+
+    it('can post multiple files with different array fields', () => {
+      const formData = {
+        files_a: ['@../package.json', '@../tsconfig.json'],
+        file_b: '@../tsoa.json',
+        files_c: ['@../tsconfig.json', '@../package.json'],
+      };
+      return verifyFileUploadRequest(`${basePath}/PostTest/ManyFilesInDifferentArrayFields`, formData, (_err, res) => {
+        for (const fileList of res.body as File[][]) {
+          for (const file of fileList) {
+            const packageJsonBuffer = readFileSync(resolve(__dirname, `../${file.originalname}`));
+            const returnedBuffer = Buffer.from(file.buffer);
+            expect(file).to.not.be.undefined;
+            expect(file.fieldname).to.be.not.undefined;
+            expect(file.originalname).to.be.not.undefined;
+            expect(file.encoding).to.be.not.undefined;
+            expect(file.mimetype).to.equal('application/json');
+            expect(Buffer.compare(returnedBuffer, packageJsonBuffer)).to.equal(0);
+          }
+        }
+      });
+    });
+
+    it('can post mixed form data content with file and not providing optional file', () => {
+      const formData = {
+        username: 'test',
+        avatar: '@../tsconfig.json',
+      };
+      return verifyFileUploadRequest(`${basePath}/PostTest/MixedFormDataWithFilesContainsOptionalFile`, formData, (_err, res) => {
+        const file = res.body.avatar;
+        const packageJsonBuffer = readFileSync(resolve(__dirname, `../${file.originalname}`));
+        const returnedBuffer = Buffer.from(file.buffer);
+        expect(res.body.username).to.equal(formData.username);
+        expect(res.body.optionalAvatar).to.undefined;
+        expect(file).to.not.be.undefined;
+        expect(file.fieldname).to.be.not.undefined;
+        expect(file.originalname).to.be.not.undefined;
+        expect(file.encoding).to.be.not.undefined;
+        expect(file.mimetype).to.equal('application/json');
+        expect(Buffer.compare(returnedBuffer, packageJsonBuffer)).to.equal(0);
+      });
+    });
+
+    it('can post mixed form data content with file and provides optional file', () => {
+      const formData = {
+        username: 'test',
+        avatar: '@../tsconfig.json',
+        optionalAvatar: '@../package.json',
+      };
+      return verifyFileUploadRequest(`${basePath}/PostTest/MixedFormDataWithFilesContainsOptionalFile`, formData, (_err, res) => {
+        expect(res.body.username).to.equal(formData.username);
+        for (const fieldName of ['avatar', 'optionalAvatar']) {
+          const file = res.body[fieldName];
           const packageJsonBuffer = readFileSync(resolve(__dirname, `../${file.originalname}`));
           const returnedBuffer = Buffer.from(file.buffer);
           expect(file).to.not.be.undefined;
@@ -1442,7 +1704,13 @@ describe('Express Server', () => {
         request =>
           Object.keys(formData).reduce((req, key) => {
             const values = [].concat(formData[key]);
-            values.forEach((v: any) => (v.startsWith('@') ? req.attach(key, resolve(__dirname, v.slice(1))) : req.field(key, v)));
+            values.forEach((v: string) => {
+              if (v.startsWith('@')) {
+                req.attach(key, resolve(__dirname, v.slice(1)));
+              } else {
+                req.field(key, v);
+              }
+            });
             return req;
           }, request.post(path)),
         expectedStatus,
@@ -1458,7 +1726,7 @@ describe('Express Server', () => {
     return verifyRequest(verifyResponse, request => request.post(path).send(data), expectedStatus);
   }
 
-  function verifyRequest(verifyResponse: (err: any, res: request.Response) => any, methodOperation: (request: request.SuperTest<any>) => request.Test, expectedStatus = 200) {
+  function verifyRequest(verifyResponse: (err: any, res: request.Response) => any, methodOperation: (request: TestAgent<request.Test>) => request.Test, expectedStatus = 200) {
     return new Promise<void>((resolve, reject) => {
       methodOperation(request(app))
         .expect(expectedStatus)
@@ -1467,10 +1735,11 @@ describe('Express Server', () => {
           try {
             parsedError = JSON.parse(res.error);
           } catch (err) {
-            parsedError = res.error;
+            parsedError = res?.error;
           }
 
           if (err) {
+            verifyResponse(err, res);
             reject({
               error: err,
               response: parsedError,
