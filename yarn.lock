@@ -515,9 +515,9 @@
     "@hapi/hoek" "^11.0.2"
 
 "@hapi/wreck@^18.0.1":
-  version "18.1.0"
-  resolved "https://registry.yarnpkg.com/@hapi/wreck/-/wreck-18.1.0.tgz#68e631fc7568ebefc6252d5b86cb804466c8dbe6"
-  integrity sha512-0z6ZRCmFEfV/MQqkQomJ7sl/hyxvcZM7LtuVqN3vdAO4vM9eBbowl0kaqQj9EJJQab+3Uuh1GxbGIBFy4NfJ4w==
+  version "18.1.2"
+  resolved "https://registry.yarnpkg.com/@hapi/wreck/-/wreck-18.1.2.tgz#1c1c84427085d7018ff4157ef3eb1e2cf080b26b"
+  integrity sha512-3dMnV2pfhQiyEqu8DL3VBmxkdLiRDiiUDuG79Dp+UK1gL9ZxAfDOUhB6k3D5MLqcgJJ1IARyGFhwoc1NITr/pg==
   dependencies:
     "@hapi/boom" "^10.0.1"
     "@hapi/bourne" "^3.0.0"
@@ -6968,7 +6968,7 @@ typedoc@^0.26.7:
     shiki "^1.16.2"
     yaml "^2.5.1"
 
-"typescript@>=3 < 6", typescript@^5.7.2, typescript@^6.0.0:
+"typescript@>=3 < 6", typescript@^5.7.2, typescript@^6.0.0, typescript@^6.0.3:
   version "6.0.3"
   resolved "https://registry.yarnpkg.com/typescript/-/typescript-6.0.3.tgz#90251dc007916e972786cb94d74d15b185577d21"
   integrity sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw==
