@@ -37,7 +37,7 @@ describe('Koa Server (with multerOpts)', () => {
     });
 
     it('cannot post file more than default 8mb', async () => {
-      writeFileSync('./moreThan8mb', new Buffer(8 * 1024 * 1024));
+      writeFileSync('./moreThan8mb', new Buffer(8 * 1024 * 1024 + 1));
       const formData = { someFile: '@../moreThan8mb' };
       let hasError = false;
       try {
