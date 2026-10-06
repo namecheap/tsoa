@@ -4803,6 +4803,24 @@ describe('Definition generation for OpenAPI 3.0.0', () => {
     });
   });
 
+  describe('const object enums reached through Omit/Pick', () => {
+    const metadata = new MetadataGenerator('./fixtures/controllers/constObjectEnumController.ts').Generate();
+    const schemas = new SpecGenerator3(metadata, getDefaultExtendedOptions()).GetSpec().components.schemas!;
+    const pick = (schema: Swagger.Schema3) => ({ type: schema.type, enum: schema.enum });
+
+    it('should keep every value of an alias used as a nullable member', () => {
+      expect(pick(schemas.ItemStatusValue)).to.deep.equal({ type: 'string', enum: ['Draft', 'Active', 'Archived'] });
+    });
+
+    it('should keep every value of an alias used as an optional member', () => {
+      expect(pick(schemas.ItemPriorityValue)).to.deep.equal({ type: 'string', enum: ['Low', 'High'] });
+    });
+
+    it('should keep every value of each alias in a union of aliases with null', () => {
+      expect(pick(schemas.ItemColorValue)).to.deep.equal({ type: 'string', enum: ['Red', 'Green'] });
+    });
+  });
+
   describe('should include valid params', () => {
     it('should include query', () => {
       const metadata = new MetadataGenerator('./fixtures/controllers/parameterController.ts').Generate();

@@ -63,18 +63,23 @@ export class TypeResolver {
     }
 
     if (ts.isUnionTypeNode(this.typeNode)) {
-      const referencerUnionTypes = this.referencer?.isUnion() ? this.referencer.types : undefined;
+      const unionReferencer = this.referencer?.isUnion() ? this.referencer : undefined;
+      // `null` in a type node is a LiteralTypeNode, not a bare NullKeyword
+      const isNullNode = (node: ts.TypeNode) => node.kind === ts.SyntaxKind.NullKeyword || (ts.isLiteralTypeNode(node) && node.literal.kind === ts.SyntaxKind.NullKeyword);
+      const nonNullishMemberCount = this.typeNode.types.filter(type => type.kind !== ts.SyntaxKind.UndefinedKeyword && !isNullNode(type)).length;
       const types = this.typeNode.types.map(type => {
         let memberReferencer: ts.Type | undefined;
-        if (referencerUnionTypes && this.typeNode.pos === -1) {
+        if (unionReferencer && this.typeNode.pos === -1) {
           // Synthetic union TypeNode: match member by type flag rather than position,
           // since typeToTypeNode and union .types may be in different order.
+          // The semantic union is flattened (`Alias | null` becomes `'a' | 'b' | null`), so a
+          // single constituent never represents a non-nullish member node.
           if (type.kind === ts.SyntaxKind.UndefinedKeyword) {
-            memberReferencer = referencerUnionTypes.find(t => !!(t.flags & ts.TypeFlags.Undefined));
-          } else if (type.kind === ts.SyntaxKind.NullKeyword) {
-            memberReferencer = referencerUnionTypes.find(t => !!(t.flags & ts.TypeFlags.Null));
-          } else {
-            memberReferencer = referencerUnionTypes.find(t => !(t.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Null)));
+            memberReferencer = unionReferencer.types.find(t => !!(t.flags & ts.TypeFlags.Undefined));
+          } else if (isNullNode(type)) {
+            memberReferencer = unionReferencer.types.find(t => !!(t.flags & ts.TypeFlags.Null));
+          } else if (nonNullishMemberCount === 1) {
+            memberReferencer = this.current.typeChecker.getNonNullableType(unionReferencer);
           }
         }
         return new TypeResolver(type, this.current, this.parentNode, this.context, memberReferencer).resolve();
