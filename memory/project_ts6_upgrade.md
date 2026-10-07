@@ -15,7 +15,7 @@ TypeScript v6 was upgraded in this repo. All unit tests (1111) now pass after fi
 
 1. **`typeResolver.ts` `calcMappedType` (line ~210)**: TS v6 `getTypeOfSymbol()` for optional properties in mapped types now includes `undefined` (e.g., `"id" | undefined` instead of `"id"`). Fix: strip the single `undefined` constituent when the property is optional (`SymbolFlags.Optional`) and only one non-undefined type remains.
 
-2. **`typeResolver.ts` union TypeNode ordering (line ~65)**: TS v6 UnionType `.types` order may differ from the UnionTypeNode `.types` order. Fix: semantic matching for synthetic TypeNodes (pos === -1) instead of index-based — UndefinedKeyword matches undefined type, non-keyword matches non-null/undefined type.
+2. **`typeResolver.ts` union TypeNode ordering (line ~65)**: TS v6 UnionType `.types` order may differ from the UnionTypeNode `.types` order. Fix: semantic matching for synthetic TypeNodes (pos === -1) instead of index-based — UndefinedKeyword matches undefined type, `null` (a LiteralTypeNode, not a bare NullKeyword) matches null. The semantic union is flattened, so a lone non-nullish member gets `getNonNullableType(referencer)`; several non-nullish members get no referencer. (Originally it took the first non-null constituent, which shipped in 6.6.1 and published `typeof X[keyof typeof X]` aliases reached via Omit/Pick with a single enum value; fixed 2026-10-06.)
 
 3. **`typeResolver.ts` MappedTypeNode guard (line ~441)**: Skip `symbol.valueDeclaration` when it's a MappedTypeNode, since `.type` on such nodes is the unresolved template.
 

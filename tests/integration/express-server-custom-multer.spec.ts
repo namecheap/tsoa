@@ -37,7 +37,7 @@ describe('Express Server With custom multer', () => {
       const formData = { wrongAttributeName: '@../package.json' };
       verifyFileUploadRequest(basePath + '/PostTest/File', formData, (_err, res) => {
         expect(res.status).to.equal(500);
-        expect(res.text).to.equal('{"message":"Unexpected field","name":"MulterError","status":500}');
+        expect(res.text).to.equal('{"message":"Unexpected file field","name":"MulterError","status":500}');
       });
     });
 
